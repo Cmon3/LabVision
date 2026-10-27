@@ -1,0 +1,6 @@
+requests
+python-dotenv
+numpy
+opencv-python-headless
+scikit-image
+pandas

@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+opencode.json
+
+# Datasets and run outputs are never committed (see data/README.md)
+data/*
+!data/README.md
+runs/
+outputs/
