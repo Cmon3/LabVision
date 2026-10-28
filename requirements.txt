@@ -4,3 +4,5 @@ numpy
 opencv-python-headless
 scikit-image
 pandas
+gradio
+pytest
