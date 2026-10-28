@@ -9,7 +9,9 @@ Internal target: **submit Nov 4, 17:00 Barcelona**. Core must work by **Oct 31**
 3. Benchmark table: SAM 3.1 vs a specialist baseline on BBBC005 (+ AGAR sample), error vs ground truth.
 4. Public repo, BUILD_LOG.md, 3-minute video, X post.
 
-## Budget ($150 Meta credits)
+## Budget ($150 Meta credits + $100 Baseten)
+Note (2026-10-28, organizers): the $150 credits only cover *Contributor* model variants (content may be used to train Meta models, no zero data retention). Standard variants bill your own card. Coding happens with Muse Spark Open via Baseten or any non-Meta tool.
+
 | Use | Cap |
 |-----|-----|
 | Coding with Muse Code (muse-spark-1.3) | $40 |
@@ -38,7 +40,7 @@ Set a Spend Limit alert in Billing. Measure the cost of the first SAM call befor
 
 ### Day 5 — Sat Oct 31  (core freeze)
 - **T8** `bench/run_bench.py`: SAM 3.1 on ~20 BBBC005 + ~20 AGAR images, MAE/% error vs ground truth → `bench/results.csv` + markdown table.
-- **T9** baseline: Cellpose-SAM (local, CPU/MPS) on the same images, same metric. Skip if it costs more than 2 h.
+- ~~T9~~ DROPPED: organizers ruled every model the project calls at runtime must be a Meta model (2026-10-28). Benchmark compares SAM 3.1 vs ground truth only.
 
 ### Day 6 — Sun Nov 1
 - **T10** `app.py` Gradio: image + request → overlay, table, report, CSV download.

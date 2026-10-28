@@ -41,5 +41,9 @@ The exact SAM 3.1 request/response format must come from the Meta docs
 (dev.meta.ai/docs/sam/overview). If the user has not pasted it, stop and ask.
 Same for Muse Spark tool-calling format.
 
+## Model policy
+- Runtime (anything the app or benchmark calls): Meta models only (SAM 3.1, Muse via Meta API, Muse Spark Open via Baseten). No third-party models.
+- Only public or synthetic data goes to any API: Meta credits allow training on our content.
+
 ## Out of scope
 No medical/clinical advice. No patient data. Research quantification only.
