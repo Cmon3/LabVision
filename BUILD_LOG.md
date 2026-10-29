@@ -17,3 +17,11 @@ so judges can tell original work from background.
 | 2026-10-29 | T2 AGAR probe 5 plates (bacterial colony → colonies) | Prompt "bacterial colony" gave 1/0 boxes (undercount); "colonies" gave 17 vs 19 true on 13895 but masks oversized (3M px vs box 15k). Overlays in runs/probe/agar/, measure printed. Blocker: SAM 3.1 not tuned for dense small colonies; will benchmark with "colonies". |
 | 2026-10-29 | T6 labvision/agent.py + scripts/run_agent.py | Baseten Muse Spark Open tool loop (qc/segment/measure/ask_rephoto), report numbers from measure only. Mock tests 2 passed, total 31. Live test on 13895: blur false-positive (73<100) + empty misflag; needs QC tuning. |
 | 2026-10-29 | T8 bench/run_bench.py 200 BBBC005 F1 + 40 AGAR | BBBC005 prompt "cell" MAE 12.14 MPE 34.1% (n=200, 1200 F1 total, 8-9 per count, seed 0). AGAR prompt "bacterial colony" MAE 46.38 MPE 99.4% (SAM undercounts). TIFF→PNG conversion added. Cost ~$0.61 for 240 images. Results in bench/results.csv + RESULTS.md. |
+| 2026-10-29 | T10 app.py Gradio first version | Upload + request → overlay (masks+boxes), table, report, CSV. Uses agent.py. Launch `python app.py` verified (http 7860). Unpolished per spec. |
+
+---
+Summary (Oct 29 long session, unattended):
+- Done: T1b decode masks, T2 AGAR probe+measure, T6 agent, T8 200 BBBC005 + 40 AGAR bench, T10 Gradio app (all pytest 31 green).
+- Blocked: AGAR SAM "bacterial colony" undercounts (99% err); QC blur threshold 100 too sensitive (73 false blur); agent empty misflag. Use "colonies" prompt and tune QC next.
+- Cost this session: ~240 SAM calls × $0.0025 = $0.60 + Muse Spark ~$0.01, well under $1 cap (total ~$0.9 overall).
+- Next: polish app, fix QC threshold, improve AGAR prompt, record video.
