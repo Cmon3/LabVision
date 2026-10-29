@@ -25,8 +25,8 @@ so judges can tell original work from background.
 | 2026-10-29 | T6b agent characterize tool + app morphology | Added `characterize` tool to agent.py (presumptive counts + "Confirm with standard microbiological methods."). App shows morphology table (35 tests). |
 
 ---
-Summary (Oct 29 long session, unattended):
-- Done: T1b decode masks, T2 AGAR probe+measure, T6 agent, T8 200 BBBC005 + 40 AGAR bench, T10 Gradio app (all pytest 31 green).
-- Blocked: AGAR SAM "bacterial colony" undercounts (99% err); QC blur threshold 100 too sensitive (73 false blur); agent empty misflag. Use "colonies" prompt and tune QC next.
-- Cost this session: ~240 SAM calls × $0.0025 = $0.60 + Muse Spark ~$0.01, well under $1 cap (total ~$0.9 overall).
-- Next: polish app, fix QC threshold, improve AGAR prompt, record video.
+Summary (Oct 29 long session 2, accuracy+characterization):
+- Done: T8c mask clip + tiling NMS + prompt sweep (round spot best 3.05 MAE), QC 6.0 threshold + empty fix, T8 rerun w1/w2 split + AGAR test 17.7 MAE, T6b characterize 400 crops (0% organism due Muse refusal), agent+app morphology.
+- Blocked: Muse Spark Open vision refuses presumptive organism ID (safety) → fallback unknown; AGAR 518 dense 298→31 undercount even with best prompt; plate Hough optional not evaluated.
+- Cost: ~350 SAM images × $0.0025 = $0.88 + 20 Muse vision calls ~$0.05, total session ~$0.93 (overall ~$1.8 under $4 cap).
+- Next: tune dense plate handling, polish app, record video.
