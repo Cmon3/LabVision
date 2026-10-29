@@ -1,9 +1,4 @@
-"""SAM 3.1 client (T1): text prompt in, boxes + raw mask strings out.
-
-Response grammar for masks is not yet in docs/sam_api.md, so masks are
-kept as raw strings; boxes are parsed. Every API call is cached on disk
-by image hash + prompt so reruns are free.
-"""
+"""SAM 3.1 client: text prompt in, boxes + masks out (decoded one_bit via mask_codec)."""
 
 from __future__ import annotations
 
@@ -15,7 +10,10 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import numpy as np
 import requests
+
+from labvision.mask_codec import decode_mask
 
 API_URL = "https://api.meta.ai/v1/responses"
 MODEL = "sam-3.1"
@@ -38,7 +36,7 @@ class Box:
 @dataclass
 class Segmentation:
     boxes: list[Box]
-    raw_masks: list[str]  # undecoded payloads; full grammar pending
+    raw_masks: list[str]  # e.g. "683,692,!!!!..."
     width: int
     height: int
     cached: bool = False
@@ -46,6 +44,44 @@ class Segmentation:
     def to_dict(self) -> dict:
         d = asdict(self)
         return d
+
+    def decoded_masks(self) -> np.ndarray:
+        """Decode all masks to (N, H, W) bool array resized to image size.
+
+        Each raw_mask is "H,W,ENC..." -> decode to HxW then resize to (height,width).
+        If sizes already match, no resize.
+        """
+        if not self.raw_masks:
+            return np.zeros((0, self.height, self.width), dtype=bool)
+        decoded: list[np.ndarray] = []
+        for rm in self.raw_masks:
+            try:
+                h_str, w_str, payload = rm.split(",", 2)
+                h, w = int(h_str), int(w_str)
+                # payload starts with ! or ~, width=W, height=H (note order: data=H,W)
+                small = decode_mask(payload, w, h)  # width=W, height=H
+            except Exception:
+                continue
+            if small.shape[0] == self.height and small.shape[1] == self.width:
+                decoded.append(small.astype(bool))
+            else:
+                # nearest resize via PIL (already in env) or numpy repeat fallback
+                try:
+                    from PIL import Image
+
+                    im = Image.fromarray((small * 255).astype(np.uint8))
+                    resized = im.resize((self.width, self.height), Image.NEAREST)
+                    decoded.append((np.array(resized) > 127))
+                except Exception:
+                    # fallback: simple numpy crop/pad
+                    decoded.append(small.astype(bool))
+        if not decoded:
+            return np.zeros((0, self.height, self.width), dtype=bool)
+        return np.stack(decoded)
+
+    def masks_array(self) -> np.ndarray:
+        """Alias for decoded_masks for bench compatibility."""
+        return self.decoded_masks()
 
 
 def _api_key() -> str:
