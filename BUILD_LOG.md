@@ -23,6 +23,7 @@ so judges can tell original work from background.
 | 2026-10-29 | T8 rerun AGAR+BBBC w1/w2 | AGAR test 20 with "round spot" tiling1: MAE 17.70→3.05 dev / 17.7 test (vs 46.38 old). BBBC w1 MAE 5.48 w2 18.95; nucleus prompt worse (52.6) kept cell. Cost incremental $0.05. RESULTS.md updated with split tables + findings. |
 | 2026-10-29 | T6b labvision/characterize.py + bench/run_species.py | Contact sheet 24 crops/call via Muse Spark Open vision. GT boxes test 20 (400 crops): accuracy 0% (model refuses organism ID, returns unknown). Per-class 0% across 6 species. bench/species.csv + RESULTS.md section. Blocker: Muse safety refusal for presumptive ID; fallback to unknown. |
 | 2026-10-29 | T6b agent characterize tool + app morphology | Added `characterize` tool to agent.py (presumptive counts + "Confirm with standard microbiological methods."). App shows morphology table (35 tests). |
+| 2026-10-29 | Fix characterize cache+raw+reasoning (T6b) | Cache now sha256(FULL bytes+prompt), never cache failed parses, raw saved to runs/characterize_raw/, reasoning handled. Manual 13895 4-crop sheet raw 300ch: "We need to respond. The user asks for research quantification only (not clinical diagnosis), contact sheet has 4 colony crops (6 cols, row-major 0..3). For each, return JSON with color, shape, margin, elevation..." Reran species test 20→390 crops, acc 0% (Muse fallback unknown). |
 
 ---
 Summary (Oct 29 long session 2, accuracy+characterization):

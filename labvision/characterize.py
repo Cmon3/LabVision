@@ -19,9 +19,9 @@ BASETEN_URL = os.environ.get("BASETEN_BASE_URL", "https://inference.baseten.co/v
 ALLOWED = ["B.subtilis", "S.aureus", "C.albicans", "Contamination", "E.coli", "P.aeruginosa", "unknown"]
 
 
-def _cache_key(image_b64: str, prompt: str) -> str:
-    h = hashlib.sha256((image_b64[:200] + prompt).encode()).hexdigest()
-    return f"char_{h[:12]}.json"
+def _cache_key(image_bytes: bytes, prompt: str) -> str:
+    h = hashlib.sha256(image_bytes + prompt.encode()).hexdigest()
+    return f"char_{h[:16]}.json"
 
 
 def _contact_sheet(image_path: Path, boxes: list[dict], pad: float = 0.2, cols: int = 6, thumb: int = 128) -> Image.Image:
@@ -48,7 +48,11 @@ def _contact_sheet(image_path: Path, boxes: list[dict], pad: float = 0.2, cols: 
     return sheet
 
 
-def _call_vision(image_b64: str, n: int, classes: list[str]) -> list[dict]:
+def _call_vision(image_bytes: bytes, n: int, classes: list[str]) -> list[dict]:
+    # image_bytes = PNG bytes of contact sheet
+    import base64 as _b64
+
+    image_b64 = _b64.b64encode(image_bytes).decode()
     key = os.environ.get("BASETEN_API_KEY", "")
     if not key:
         raise RuntimeError("BASETEN_API_KEY missing")
@@ -72,20 +76,35 @@ def _call_vision(image_b64: str, n: int, classes: list[str]) -> list[dict]:
         ],
         "temperature": 0.2,
     }
-    cpath = CACHE_DIR / _cache_key(image_b64, prompt[:50])
+    cpath = CACHE_DIR / _cache_key(image_bytes, prompt)
     if cpath.exists():
         return json.loads(cpath.read_text())
     r = requests.post(url, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, json=body, timeout=120)
     if r.status_code != 200:
         raise RuntimeError(f"Muse vision HTTP {r.status_code}: {r.text[:500]}")
     data = r.json()
-    content = data["choices"][0]["message"]["content"]
+    # handle reasoning text before JSON (Muse Spark Open may put thinking in reasoning_content)
+    msg = data["choices"][0]["message"]
+    content = msg.get("content") or ""
+    reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
+    raw_save = (reasoning + "\n" + content) if reasoning else content
+    # save raw response for debugging
+    raw_dir = Path("runs/characterize_raw")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    raw_path = raw_dir / f"{_cache_key(image_bytes, prompt)[:-5]}.txt"
+    raw_path.write_text(raw_save[:5000])
+
+    # parse JSON, handling reasoning prefix
+    candidate = content
+    if not candidate.strip().startswith("["):
+        # try reasoning as well
+        candidate = reasoning + "\n" + content if reasoning else content
     try:
-        start = content.find("[")
-        end = content.rfind("]") + 1
+        start = candidate.find("[")
+        end = candidate.rfind("]") + 1
         if start == -1 or end == 0:
             raise ValueError("no JSON array")
-        arr = json.loads(content[start:end])
+        arr = json.loads(candidate[start:end])
         for d in arr:
             if isinstance(d.get("confidence"), str):
                 try:
@@ -95,8 +114,8 @@ def _call_vision(image_b64: str, n: int, classes: list[str]) -> list[dict]:
                     d["confidence"] = float(m.group(0)) if m else 0.0
                 except Exception:
                     d["confidence"] = 0.0
-    except Exception as e:
-        # model refusal -> fallback to unknown (still counts as vision capable)
+    except Exception:
+        # never cache failed parses
         arr = [
             {
                 "color": "unknown",
@@ -109,9 +128,6 @@ def _call_vision(image_b64: str, n: int, classes: list[str]) -> list[dict]:
             }
             for _ in range(n)
         ]
-        # cache refusal to avoid re-prompting
-        cpath.parent.mkdir(parents=True, exist_ok=True)
-        cpath.write_text(json.dumps(arr))
         return arr
     cpath.parent.mkdir(parents=True, exist_ok=True)
     cpath.write_text(json.dumps(arr))
@@ -124,11 +140,10 @@ def characterize(image_path: str | Path, boxes: list[dict]) -> list[dict]:
     sheet = _contact_sheet(image_path, boxes)
     buf = BytesIO()
     sheet.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode()
+    image_bytes = buf.getvalue()
     try:
-        arr = _call_vision(b64, len(boxes[:24]), ALLOWED)
+        arr = _call_vision(image_bytes, len(boxes[:24]), ALLOWED)
     except Exception as e:
-        # fallback: if vision not available, return unknowns
         if "image" in str(e).lower() or "vision" in str(e).lower():
             raise
         arr = [{"color": "unknown", "shape": "unknown", "margin": "unknown", "elevation": "unknown", "size_class": "medium", "presumptive_organism": "unknown", "confidence": 0.0} for _ in boxes[:24]]

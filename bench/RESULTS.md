@@ -150,3 +150,19 @@ Accuracy 0.0% (0/400) over 20 images, 400 crops (max 400)
 | S.aureus | 0 | 0 | 0 | 0 | 0 | 0 | 83 |
 
 *Presumptive organism via Muse Spark Open vision on contact sheets (24 crops/call). Confirm with standard microbiological methods.*
+
+
+## Species characterization (AGAR test, GT boxes)
+
+Accuracy 0.0% (0/390) over 20 images, 400 crops (max 400)
+
+| true \ pred | B.subtilis | C.albicans | Contamination | E.coli | P.aeruginosa | S.aureus | unknown |
+|---|---|---|---|---|---|---|---|
+| B.subtilis | 0 | 0 | 0 | 0 | 0 | 0 | 95 |
+| C.albicans | 0 | 0 | 0 | 0 | 0 | 0 | 35 |
+| Contamination | 0 | 0 | 0 | 0 | 0 | 0 | 14 |
+| E.coli | 0 | 0 | 0 | 0 | 0 | 0 | 135 |
+| P.aeruginosa | 0 | 0 | 0 | 0 | 0 | 0 | 28 |
+| S.aureus | 0 | 0 | 0 | 0 | 0 | 0 | 83 |
+
+*Presumptive organism via Muse Spark Open vision on contact sheets (24 crops/call). Confirm with standard microbiological methods.*
