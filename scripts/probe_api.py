@@ -48,20 +48,38 @@ def collect_images(paths: list[str]) -> list[Path]:
     return out
 
 
-def save_overlay(image_path: Path, boxes, out_path: Path) -> None:
+def save_overlay(image_path: Path, boxes, out_path: Path, masks=None) -> None:
     if not HAS_PIL:
         print(f"  no PIL — skip overlay for {image_path.name}")
         return
     try:
-        im = Image.open(image_path).convert("RGB")
+        im = Image.open(image_path).convert("RGBA")
     except Exception as e:
         print(f"  cannot open image for overlay: {e}")
         return
+    # masks overlay (red translucent) if available
+    if masks is not None and len(masks) > 0:
+        try:
+            import numpy as np
+
+            for m in masks:
+                # m is (H,W) bool
+                if m.shape[0] != im.size[1] or m.shape[1] != im.size[0]:
+                    continue
+                red = Image.new("RGBA", im.size, (255, 0, 0, 70))
+                mask_im = Image.fromarray((m.astype(np.uint8) * 255))
+                im = Image.alpha_composite(im, Image.new("RGBA", im.size, (0, 0, 0, 0)))
+                # composite red where mask
+                tmp = Image.new("RGBA", im.size, (0, 0, 0, 0))
+                tmp.paste(red, mask=mask_im)
+                im = Image.alpha_composite(im, tmp)
+        except Exception as e:
+            print(f"  mask overlay warn: {e}")
     draw = ImageDraw.Draw(im)
     for b in boxes:
-        draw.rectangle([(b.x1, b.y1), (b.x2, b.y2)], outline="red", width=2)
+        draw.rectangle([(b.x1, b.y1), (b.x2, b.y2)], outline="lime", width=2)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    im.save(out_path)
+    im.convert("RGB").save(out_path)
     print(f"  overlay -> {out_path}")
 
 
@@ -116,8 +134,28 @@ def main() -> int:
             print(f"  API: {len(seg.boxes)} boxes, {seg.width}x{seg.height}")
             total_api_calls += 1
         print(f"  masks: {len(seg.raw_masks)} raw payloads")
+        # measure via decoded masks
+        try:
+            masks = seg.decoded_masks()
+            from labvision.measure import measure_masks
+
+            rows = measure_masks(masks)
+            if rows:
+                ds = [r["diameter_px"] for r in rows]
+                print(f"  measure: count={len(rows)} diam_px mean={sum(ds)/len(ds):.1f} min={min(ds):.1f} max={max(ds):.1f}")
+            else:
+                print("  measure: count=0")
+        except Exception as e:
+            print(f"  measure warn: {e}")
+            masks = None
+        else:
+            # keep masks for overlay
+            pass
         out = PROBE_DIR / f"{img_path.stem}_{args.prompt.replace(' ', '_')}_overlay.png"
-        save_overlay(img_path, seg.boxes, out)
+        try:
+            save_overlay(img_path, seg.boxes, out, masks=masks)
+        except Exception:
+            save_overlay(img_path, seg.boxes, out)
 
     est_cost = total_api_calls * COST_PER_IMAGE
     cached = len(images) - total_api_calls
