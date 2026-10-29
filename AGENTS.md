@@ -46,4 +46,6 @@ Same for Muse Spark tool-calling format.
 - Only public or synthetic data goes to any API: Meta credits allow training on our content.
 
 ## Out of scope
-No medical/clinical advice. No patient data. Research quantification only.
+No medical/clinical advice. No patient data. Never use the words "diagnosis" or "diagnose"
+in code, UI, reports or docs. Organism output is always "presumptive" with a confidence and
+the line "Confirm with standard microbiological methods." Target users are lab technicians.
