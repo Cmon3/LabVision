@@ -209,16 +209,16 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
             qc_summary = ", ".join(flags)
         else:
             qc_summary = f"sharp (score {qc_result['blur_score']:.1f}), no glare"
-    # check empty/crowded via masks if available
+    # check empty/crowded via final count (fix false empty when count>0)
     if seg_result is not None:
-        # empty/crowded from qc module using mask count/coverage
         try:
             masks = seg_result.decoded_masks()
             cov = qc_mod.mask_coverage(masks, seg_result.width * seg_result.height) if masks.size else 0
-            if qc_mod.is_empty(len(seg_result.boxes)):
+            final_n = len(measure_rows) if measure_rows else len(seg_result.boxes)
+            if qc_mod.is_empty(final_n):
                 qc_summary += "; empty (no objects)"
-            elif qc_mod.is_crowded(len(seg_result.boxes), cov):
-                qc_summary += f"; crowded (count {len(seg_result.boxes)}, coverage {cov:.0%})"
+            elif qc_mod.is_crowded(final_n, cov):
+                qc_summary += f"; crowded (count {final_n}, coverage {cov:.0%})"
         except Exception:
             pass
 

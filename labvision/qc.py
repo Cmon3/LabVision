@@ -32,7 +32,19 @@ def laplacian_variance(image: np.ndarray) -> float:
     return float(np.var(lap))
 
 
-def is_blurry(image: np.ndarray, threshold: float = 100.0) -> bool:
+DEFAULT_BLUR_THRESHOLD = 6.0  # below 5th pct of AGAR/BBBC (dark p5 6.9, BBBC p5 10.0, see bench/qc_calibration.md)
+
+# Per-resolution thresholds (below 5th percentile): lower-res 52.5→50, bright 15.7→12, dark 6.9→5, vague 47→40, BBBC 10→8
+BLUR_THRESHOLDS = {
+    "agar_lower": 50.0,
+    "agar_bright": 12.0,
+    "agar_dark": 5.0,
+    "agar_vague": 40.0,
+    "bbbc": 8.0,
+}
+
+
+def is_blurry(image: np.ndarray, threshold: float = DEFAULT_BLUR_THRESHOLD) -> bool:
     """True when sharpness is below threshold."""
     return laplacian_variance(image) < threshold
 
