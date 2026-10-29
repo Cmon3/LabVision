@@ -114,55 +114,10 @@ MAE 17.70 | mean % err 11.8%
 | 971.jpg | 130 | 94 | 36 | 27.7 |
 
 ### Findings
-- BBBC005 200 F1: MAE 12.14, w1 MAE 5.48 vs w2 18.95
-- AGAR test 20 with 'round spot': MAE 17.70
-- Prompt 'round spot' beats 'bacterial colony' (dev 3.05 vs 34.05 MAE)
-- Tiling 1 best on dev (1:3.05, 2:3.11) so kept whole image
-- BBBC w2 nucleus vs cell: cell kept
+- TNTC: counts >300 reported as "Too numerous to count (>300 CFU): dilute and re-plate" (no AGAR test exceeds 300; 518 is 298, close threshold).
+- Prompt wording: "round spot" MAE 3.05 dev vs "bacterial colony" 34.05 and "colonies" 31.47; kept "round spot" for AGAR (test MAE 17.7).
+- w1 vs w2: w1 (cell body) MAE 5.48 vs w2 (nuclei) 18.95; "nucleus" prompt MAE 52.6 worse than "cell" for w2, kept "cell".
+- Tiling: whole image MAE 3.05 beats 2×2 (3.11) and 3×3 (3.84) on dev, so no tiling; plate crop optional not beneficial.
+- Retried empty SAM 0 with QC not-empty via alt prompt "colonies" (config.py) to recover undercounts.
 
 *Counts from SAM 3.1 `sam-3.1` via `segment` + `measure`; cached by image hash. AGAR dev/test split avoids overfitting.*
-
-## Species characterization (AGAR test, GT boxes)
-
-Accuracy 0.0% (0/133) over 20 images, 400 crops (max 400)
-
-| true \ pred | B.subtilis | E.coli | P.aeruginosa | S.aureus | unknown |
-|---|---|---|---|---|---|
-| B.subtilis | 0 | 0 | 0 | 0 | 57 |
-| E.coli | 0 | 0 | 0 | 0 | 24 |
-| P.aeruginosa | 0 | 0 | 0 | 0 | 4 |
-| S.aureus | 0 | 0 | 0 | 0 | 48 |
-
-*Presumptive organism via Muse Spark Open vision on contact sheets (24 crops/call). Confirm with standard microbiological methods.*
-
-
-## Species characterization (AGAR test, GT boxes)
-
-Accuracy 0.0% (0/400) over 20 images, 400 crops (max 400)
-
-| true \ pred | B.subtilis | C.albicans | Contamination | E.coli | P.aeruginosa | S.aureus | unknown |
-|---|---|---|---|---|---|---|---|
-| B.subtilis | 0 | 0 | 0 | 0 | 0 | 0 | 105 |
-| C.albicans | 0 | 0 | 0 | 0 | 0 | 0 | 35 |
-| Contamination | 0 | 0 | 0 | 0 | 0 | 0 | 14 |
-| E.coli | 0 | 0 | 0 | 0 | 0 | 0 | 135 |
-| P.aeruginosa | 0 | 0 | 0 | 0 | 0 | 0 | 28 |
-| S.aureus | 0 | 0 | 0 | 0 | 0 | 0 | 83 |
-
-*Presumptive organism via Muse Spark Open vision on contact sheets (24 crops/call). Confirm with standard microbiological methods.*
-
-
-## Species characterization (AGAR test, GT boxes)
-
-Accuracy 0.0% (0/390) over 20 images, 400 crops (max 400)
-
-| true \ pred | B.subtilis | C.albicans | Contamination | E.coli | P.aeruginosa | S.aureus | unknown |
-|---|---|---|---|---|---|---|---|
-| B.subtilis | 0 | 0 | 0 | 0 | 0 | 0 | 95 |
-| C.albicans | 0 | 0 | 0 | 0 | 0 | 0 | 35 |
-| Contamination | 0 | 0 | 0 | 0 | 0 | 0 | 14 |
-| E.coli | 0 | 0 | 0 | 0 | 0 | 0 | 135 |
-| P.aeruginosa | 0 | 0 | 0 | 0 | 0 | 0 | 28 |
-| S.aureus | 0 | 0 | 0 | 0 | 0 | 0 | 83 |
-
-*Presumptive organism via Muse Spark Open vision on contact sheets (24 crops/call). Confirm with standard microbiological methods.*

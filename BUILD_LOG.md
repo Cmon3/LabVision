@@ -25,6 +25,7 @@ so judges can tell original work from background.
 | 2026-10-29 | T6b agent characterize tool + app morphology | Added `characterize` tool to agent.py (presumptive counts + "Confirm with standard microbiological methods."). App shows morphology table (35 tests). |
 | 2026-10-29 | Fix characterize cache+raw+reasoning (T6b) | Cache now sha256(FULL bytes+prompt), never cache failed parses, raw saved to runs/characterize_raw/, reasoning handled. Manual 13895 4-crop sheet raw 300ch: "We need to respond. The user asks for research quantification only (not clinical diagnosis), contact sheet has 4 colony crops (6 cols, row-major 0..3). For each, return JSON with color, shape, margin, elevation..." Reran species test 20→390 crops, acc 0% (Muse fallback unknown). |
 | 2026-10-29 | Fix agent TNTC + retry (T6) | Count>300 → "Too numerous to count (>300 CFU): dilute and re-plate". SAM 0 but QC not empty → retry once with AGAR_ALT_PROMPT "colonies" from config.py. |
+| 2026-10-29 | Rerun bench + Findings (T8) | Reran AGAR test with new config (cached, no new SAM cost), updated bench/RESULTS.md Findings: TNTC threshold, prompt wording "round spot" best, w1 vs w2 5.48 vs 18.95, tiling, retry. |
 
 ---
 Summary (Oct 29 long session 2, accuracy+characterization):
