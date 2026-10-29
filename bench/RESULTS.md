@@ -121,3 +121,32 @@ MAE 17.70 | mean % err 11.8%
 - BBBC w2 nucleus vs cell: cell kept
 
 *Counts from SAM 3.1 `sam-3.1` via `segment` + `measure`; cached by image hash. AGAR dev/test split avoids overfitting.*
+
+## Species characterization (AGAR test, GT boxes)
+
+Accuracy 0.0% (0/133) over 20 images, 400 crops (max 400)
+
+| true \ pred | B.subtilis | E.coli | P.aeruginosa | S.aureus | unknown |
+|---|---|---|---|---|---|
+| B.subtilis | 0 | 0 | 0 | 0 | 57 |
+| E.coli | 0 | 0 | 0 | 0 | 24 |
+| P.aeruginosa | 0 | 0 | 0 | 0 | 4 |
+| S.aureus | 0 | 0 | 0 | 0 | 48 |
+
+*Presumptive organism via Muse Spark Open vision on contact sheets (24 crops/call). Confirm with standard microbiological methods.*
+
+
+## Species characterization (AGAR test, GT boxes)
+
+Accuracy 0.0% (0/400) over 20 images, 400 crops (max 400)
+
+| true \ pred | B.subtilis | C.albicans | Contamination | E.coli | P.aeruginosa | S.aureus | unknown |
+|---|---|---|---|---|---|---|---|
+| B.subtilis | 0 | 0 | 0 | 0 | 0 | 0 | 105 |
+| C.albicans | 0 | 0 | 0 | 0 | 0 | 0 | 35 |
+| Contamination | 0 | 0 | 0 | 0 | 0 | 0 | 14 |
+| E.coli | 0 | 0 | 0 | 0 | 0 | 0 | 135 |
+| P.aeruginosa | 0 | 0 | 0 | 0 | 0 | 0 | 28 |
+| S.aureus | 0 | 0 | 0 | 0 | 0 | 0 | 83 |
+
+*Presumptive organism via Muse Spark Open vision on contact sheets (24 crops/call). Confirm with standard microbiological methods.*
