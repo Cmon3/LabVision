@@ -69,13 +69,25 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "characterize",
+            "description": "Characterize colonies by morphology (call after segment). Returns per-type counts.",
+            "parameters": {
+                "type": "object",
+                "properties": {"max_crops": {"type": "integer", "description": "max colonies to characterize (default 12)"}},
+                "required": [],
+            },
+        },
+    },
 ]
 
 SYSTEM = """You are LabVision Copilot, a lab assistant. You have tools to inspect images.
 Rules:
 - Always call check_quality first.
 - If quality fails (blurry, glare, empty, crowded) call ask_rephoto.
-- Otherwise call segment with a short noun phrase for the objects the user asked about, then measure.
+- Otherwise call segment with a short noun phrase for the objects the user asked about, then measure. Optionally call characterize for morphology.
 - Do NOT invent numbers. The final report numbers will be filled by code from tool outputs.
 - Provide a short 2-sentence interpretation for the report (no numbers needed, they are inserted).
 """
@@ -91,9 +103,11 @@ Mean diameter: {mean_d:.1f} px ({mean_mm:.2f} mm)
 Diameters (px): min {min_d:.1f} max {max_d:.1f}
 Areas (px): mean {mean_a:.0f}
 
+{char_section}
 Note: {assistant_note}
 
 {rephoto_line}
+Confirm with standard microbiological methods.
 """
 
 
@@ -141,6 +155,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
     measure_rows: list[dict] = []
     qc_result: dict | None = None
     rephoto_reason: str | None = None
+    char_results: list[dict] = []
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": f"Image: {image_path.name}\nRequest: {request}\nUse tools to answer."},
@@ -189,6 +204,25 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                 elif fname == "ask_rephoto":
                     rephoto_reason = args.get("reason", "")
                     result = {"asked": True, "reason": rephoto_reason}
+                elif fname == "characterize":
+                    if seg_result is None:
+                        result = {"error": "call segment first"}
+                    else:
+                        try:
+                            from labvision.characterize import characterize as char_fn
+
+                            # convert boxes to x,y,width,height for characterize
+                            boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg_result.boxes]
+                            max_crops = int(args.get("max_crops", 12))
+                            boxes_for_char = boxes_for_char[:max_crops]
+                            char_results = char_fn(image_path, boxes_for_char)
+                            # summarize counts per presumptive type
+                            from collections import Counter
+
+                            cnt = Counter(r["presumptive_organism"] for r in char_results)
+                            result = {"counts": dict(cnt), "details": char_results[:3]}
+                        except Exception as e:
+                            result = {"error": str(e)[:200]}
                 else:
                     result = {"error": f"unknown tool {fname}"}
             except Exception as e:
@@ -246,6 +280,13 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
     filter_line = f"Filter: diameter >= {m.group(1)} mm" if m else ""
 
     rephoto_line = f"Action: Please retake photo — {rephoto_reason}" if rephoto_reason else ""
+    # characterization section (presumptive)
+    char_section = ""
+    if char_results:
+        from collections import Counter
+
+        cnt = Counter(r["presumptive_organism"] for r in char_results)
+        char_section = "Colony types (presumptive): " + ", ".join(f"{k} {v}" for k, v in cnt.items())
 
     report = REPORT_TEMPLATE.format(
         request=request,
@@ -260,6 +301,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         mean_a=mean_a,
         assistant_note=assistant_note.strip() if "assistant_note" in locals() else "",
         rephoto_line=rephoto_line,
+        char_section=char_section,
     )
 
     return {

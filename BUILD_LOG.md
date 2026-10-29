@@ -22,6 +22,7 @@ so judges can tell original work from background.
 | 2026-10-29 | QC calibration blur threshold + empty fix | New DEFAULT 6.0 (<5th pct dark 6.9, BBBC 10.0); per-res map in qc.py. Fixed agent empty false flag (now uses final count). Tests 35 passed. Calibration bench/qc_calibration.md. |
 | 2026-10-29 | T8 rerun AGAR+BBBC w1/w2 | AGAR test 20 with "round spot" tiling1: MAE 17.70→3.05 dev / 17.7 test (vs 46.38 old). BBBC w1 MAE 5.48 w2 18.95; nucleus prompt worse (52.6) kept cell. Cost incremental $0.05. RESULTS.md updated with split tables + findings. |
 | 2026-10-29 | T6b labvision/characterize.py + bench/run_species.py | Contact sheet 24 crops/call via Muse Spark Open vision. GT boxes test 20 (400 crops): accuracy 0% (model refuses organism ID, returns unknown). Per-class 0% across 6 species. bench/species.csv + RESULTS.md section. Blocker: Muse safety refusal for presumptive ID; fallback to unknown. |
+| 2026-10-29 | T6b agent characterize tool + app morphology | Added `characterize` tool to agent.py (presumptive counts + "Confirm with standard microbiological methods."). App shows morphology table (35 tests). |
 
 ---
 Summary (Oct 29 long session, unattended):

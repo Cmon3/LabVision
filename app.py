@@ -40,46 +40,52 @@ def _overlay(image_path: str, boxes, masks: np.ndarray | None):
 
 def process(image, request: str):
     if image is None:
-        return None, None, "Upload an image first.", None
+        return None, None, None, "Upload an image first.", None
     if not request.strip():
         request = "count colonies"
-    # save temp for agent (needs path)
     tmp = Path(tempfile.gettempdir()) / "gradio_input.png"
-    # image is numpy array from gr.Image
     if isinstance(image, np.ndarray):
         Image.fromarray(image.astype(np.uint8)).save(tmp)
     else:
-        # filepath
         tmp = Path(image)
 
-    # Run agent (handles qc/segment/measure)
     try:
         out = run_agent(tmp, request)
     except Exception as e:
-        return None, None, f"Error: {e}", None
+        return None, None, None, f"Error: {e}", None
 
-    # Build overlay via direct segment for visual (reuse agent's seg)
-    # Re-segment for overlay to avoid agent internals
+    # overlay
     try:
         seg = segment(Path(tmp).read_bytes(), "cell" if "cell" in request.lower() else "bacterial colony")
         masks = seg.decoded_masks()
         overlay = _overlay(tmp, seg.boxes, masks)
         rows = measure_masks(masks)
         df = pd.DataFrame(rows) if rows else pd.DataFrame([{"info": "no objects"}])
+        # morphology table if characterize was used
+        morph_df = None
+        if "characterize" in request.lower() and seg.boxes:
+            try:
+                from labvision.characterize import characterize
+
+                boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg.boxes[:12]]
+                char = characterize(tmp, boxes_for_char)
+                morph_df = pd.DataFrame(char)
+            except Exception:
+                morph_df = None
+        else:
+            morph_df = None
     except Exception:
         overlay = Image.open(tmp).convert("RGB")
         df = pd.DataFrame(out.get("rows", []))
+        morph_df = None
 
-    # CSV
     csv_path = None
-    if out.get("rows"):
-        df.to_csv("/tmp/labvision_results.csv", index=False)
-        csv_path = "/tmp/labvision_results.csv"
-    elif not df.empty:
+    if not df.empty:
         df.to_csv("/tmp/labvision_results.csv", index=False)
         csv_path = "/tmp/labvision_results.csv"
 
-    return overlay, df, out.get("report", ""), csv_path
+    # return morph as second dataframe if exists, else None
+    return overlay, df, morph_df if morph_df is not None else pd.DataFrame(), out.get("report", ""), csv_path
 
 
 with gr.Blocks(title="LabVision Copilot") as demo:
@@ -92,9 +98,10 @@ with gr.Blocks(title="LabVision Copilot") as demo:
     with gr.Row():
         out_img = gr.Image(label="Overlay (masks + boxes)")
         out_table = gr.Dataframe(label="Measurements")
+    morph_table = gr.Dataframe(label="Morphology (presumptive) — confirm with standard microbiological methods")
     out_report = gr.Textbox(label="Report", lines=10)
     out_csv = gr.File(label="CSV download")
-    btn.click(process, inputs=[inp_img, inp_req], outputs=[out_img, out_table, out_report, out_csv])
+    btn.click(process, inputs=[inp_img, inp_req], outputs=[out_img, out_table, morph_table, out_report, out_csv])
 
 if __name__ == "__main__":
     demo.launch()
