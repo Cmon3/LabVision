@@ -46,3 +46,28 @@ def test_segmentation_decoded_resize():
     assert arr.shape == (1, d["height"], d["width"])
     assert arr.shape[1] == 787 and arr.shape[2] == 762
     assert int(arr.sum()) > 0
+
+
+def test_mask_clipping_to_box():
+    # synthetic: mask covers whole image but box is small -> clipped
+    box = Box(x1=10, y1=10, x2=20, y2=20)  # 10x10=100
+    seg = Segmentation(boxes=[box], raw_masks=["10,10,!dummy"], width=100, height=100, cached=False)
+    # patch decode_mask to return full image mask
+    import labvision.segment as segmod
+
+    orig = segmod.decode_mask
+
+    def fake(payload, w, h):
+        return np.ones((100, 100), dtype=np.uint8)
+
+    segmod.decode_mask = fake
+    try:
+        arr = seg.decoded_masks(clip_to_box_ratio=2.0)
+        assert arr.shape == (1, 100, 100)
+        # full would be 10000, box 100, ratio 2 => clipped to 100
+        assert int(arr[0].sum()) == 100
+        # without clipping, would be 10000
+        arr_no = seg.decoded_masks(clip_to_box_ratio=0)
+        assert int(arr_no[0].sum()) == 10000
+    finally:
+        segmod.decode_mask = orig

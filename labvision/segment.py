@@ -45,36 +45,44 @@ class Segmentation:
         d = asdict(self)
         return d
 
-    def decoded_masks(self) -> np.ndarray:
+    def decoded_masks(self, clip_to_box_ratio: float = 2.0) -> np.ndarray:
         """Decode all masks to (N, H, W) bool array resized to image size.
 
         Each raw_mask is "H,W,ENC..." -> decode to HxW then resize to (height,width).
-        If sizes already match, no resize.
+        If a mask's area is much larger than its box (ratio), clip to box bounds.
         """
         if not self.raw_masks:
             return np.zeros((0, self.height, self.width), dtype=bool)
         decoded: list[np.ndarray] = []
-        for rm in self.raw_masks:
+        for i, rm in enumerate(self.raw_masks):
             try:
                 h_str, w_str, payload = rm.split(",", 2)
                 h, w = int(h_str), int(w_str)
-                # payload starts with ! or ~, width=W, height=H (note order: data=H,W)
-                small = decode_mask(payload, w, h)  # width=W, height=H
+                small = decode_mask(payload, w, h)
             except Exception:
                 continue
             if small.shape[0] == self.height and small.shape[1] == self.width:
-                decoded.append(small.astype(bool))
+                arr = small.astype(bool)
             else:
-                # nearest resize via PIL (already in env) or numpy repeat fallback
                 try:
                     from PIL import Image
 
                     im = Image.fromarray((small * 255).astype(np.uint8))
                     resized = im.resize((self.width, self.height), Image.NEAREST)
-                    decoded.append((np.array(resized) > 127))
+                    arr = np.array(resized) > 127
                 except Exception:
-                    # fallback: simple numpy crop/pad
-                    decoded.append(small.astype(bool))
+                    arr = small.astype(bool)
+            # clip to box if mask much larger than box
+            if i < len(self.boxes) and clip_to_box_ratio and arr.size:
+                b = self.boxes[i]
+                box_area = max(0, b.x2 - b.x1) * max(0, b.y2 - b.y1)
+                mask_area = int(arr.sum())
+                if box_area > 0 and mask_area > clip_to_box_ratio * box_area:
+                    clipped = np.zeros_like(arr)
+                    x1, y1, x2, y2 = max(0, b.x1), max(0, b.y1), min(self.width, b.x2), min(self.height, b.y2)
+                    clipped[y1:y2, x1:x2] = arr[y1:y2, x1:x2]
+                    arr = clipped
+            decoded.append(arr)
         if not decoded:
             return np.zeros((0, self.height, self.width), dtype=bool)
         return np.stack(decoded)

@@ -18,6 +18,7 @@ so judges can tell original work from background.
 | 2026-10-29 | T6 labvision/agent.py + scripts/run_agent.py | Baseten Muse Spark Open tool loop (qc/segment/measure/ask_rephoto), report numbers from measure only. Mock tests 2 passed, total 31. Live test on 13895: blur false-positive (73<100) + empty misflag; needs QC tuning. |
 | 2026-10-29 | T8 bench/run_bench.py 200 BBBC005 F1 + 40 AGAR | BBBC005 prompt "cell" MAE 12.14 MPE 34.1% (n=200, 1200 F1 total, 8-9 per count, seed 0). AGAR prompt "bacterial colony" MAE 46.38 MPE 99.4% (SAM undercounts). TIFF→PNG conversion added. Cost ~$0.61 for 240 images. Results in bench/results.csv + RESULTS.md. |
 | 2026-10-29 | T10 app.py Gradio first version | Upload + request → overlay (masks+boxes), table, report, CSV. Uses agent.py. Launch `python app.py` verified (http 7860). Unpolished per spec. |
+| 2026-10-29 | T8c labvision/segment clipping + tiling/plate + config | Mask→box clip ratio 2.0 (test), tiling NMS IoU0.5 (1/2/3), plate Hough optional. Prompt sweep dev 19: "round spot" MAE 3.05 best vs "bacterial colony" 34.05. Config saved labvision/config.py, sweep bench/agar_sweep.csv (32 tests). |
 
 ---
 Summary (Oct 29 long session, unattended):
