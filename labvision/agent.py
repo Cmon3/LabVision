@@ -97,7 +97,7 @@ Request: {request}
 Image: {image_name}
 
 Quality: {qc_summary}
-Count: {count} objects
+Count: {count_display}
 {filter_line}
 Mean diameter: {mean_d:.1f} px ({mean_mm:.2f} mm)
 Diameters (px): min {min_d:.1f} max {max_d:.1f}
@@ -187,8 +187,19 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                 elif fname == "segment":
                     prompt = args.get("prompt", "bacterial colony")
                     seg_result = segment(img_bytes, prompt)
+                    # retry once if 0 but QC says not empty (sharp, no glare)
+                    if len(seg_result.boxes) == 0 and qc_result is not None and not qc_result.get("is_blurry") and not qc_result.get("glare"):
+                        try:
+                            from labvision.config import AGAR_ALT_PROMPT
+
+                            alt = AGAR_ALT_PROMPT
+                            if alt and alt != prompt:
+                                seg_result = segment(img_bytes, alt)
+                                prompt = alt
+                        except Exception:
+                            pass
                     masks = seg_result.decoded_masks()
-                    result = {"count": len(seg_result.boxes), "width": seg_result.width, "height": seg_result.height, "masks": int(masks.shape[0])}
+                    result = {"count": len(seg_result.boxes), "width": seg_result.width, "height": seg_result.height, "masks": int(masks.shape[0]), "prompt_used": prompt}
                 elif fname == "measure":
                     if seg_result is None:
                         result = {"error": "call segment first"}
@@ -257,6 +268,8 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
             pass
 
     count = len(measure_rows) if measure_rows else (len(seg_result.boxes) if seg_result else 0)
+    # TNTC: >300
+    count_display = "Too numerous to count (>300 CFU): dilute and re-plate" if count > 300 else f"{count} objects"
     if measure_rows:
         ds = [r["diameter_px"] for r in measure_rows]
         areas = [r["area_px"] for r in measure_rows]
@@ -292,7 +305,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         request=request,
         image_name=image_path.name,
         qc_summary=qc_summary,
-        count=count,
+        count_display=count_display,
         filter_line=filter_line,
         mean_d=mean_d,
         mean_mm=mean_mm,
