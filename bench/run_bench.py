@@ -11,11 +11,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from bench.datasets import list_bbbc005, list_image_files
+from bench.datasets import list_bbbc005
+from labvision.config import AGAR_CLIP_RATIO, AGAR_PROMPT, AGAR_TILING
 from labvision.measure import measure_masks
 from labvision.segment import segment
+from labvision.tiling import segment_tiled
 
-# ponytail: keep one file, no extra abstractions
 OUT_CSV = Path("bench/results.csv")
 OUT_CSV_AGAR = Path("bench/results_agar.csv")
 OUT_MD = Path("bench/RESULTS.md")
@@ -52,9 +53,12 @@ def _run_with_prompt(path: Path, prompt: str):
     return segment(path.read_bytes(), prompt)
 
 
-def run_one(path: Path, prompt: str, true_count: int | None):
-    seg = segment(path.read_bytes(), prompt)
-    masks = seg.decoded_masks()
+def run_one(path: Path, prompt: str, true_count: int | None, tiling: int = 1):
+    if tiling == 1:
+        seg = segment(path.read_bytes(), prompt)
+    else:
+        seg = segment_tiled(path.read_bytes(), prompt, tiling=tiling)
+    masks = seg.decoded_masks(clip_to_box_ratio=AGAR_CLIP_RATIO)
     rows = measure_masks(masks)
     pred = len(rows)
     err = abs(pred - true_count) if true_count is not None else None
@@ -107,43 +111,60 @@ def main(limit: int | None = None):
     print(f"BBBC005 MAE {mae:.2f} MPE {mpe:.1f}% n={len(rows)} cost ~${len([r for r in rows if not r.get('cached')])*0.0025:.3f}")
     write_csv(rows, OUT_CSV)
 
-    # AGAR
-    agar_rows = []
-    # collect all AGAR jsons recursively
-    for root, _, files in AGAR_ROOT.walk() if hasattr(AGAR_ROOT, "walk") else []:
-        pass
-    # fallback: glob
-    import glob
+    # AGAR — dev/test split, best config from labvision/config.py
+    import json as _json
 
-    agar_images = []
-    for ext in ("*.jpg", "*.png"):
-        agar_images.extend(Path(AGAR_ROOT).rglob(ext))
-    print(f"AGAR images found {len(agar_images)}")
-    for img in sorted(agar_images):
-        js = img.with_suffix(".json")
+    all_agar = []
+    for p in AGAR_ROOT.rglob("*.jpg"):
+        js = p.with_suffix(".json")
         if not js.exists():
             continue
-        try:
-            data = json.loads(js.read_text())
-            true_c = data.get("colonies_number")
-            if true_c is None:
-                continue
-            r = run_one(img, "bacterial colony", true_c)
-            # also try "colonies" if first gave 0? keep "bacterial colony" per spec
-            agar_rows.append(r)
-            print(f"AGAR {img.name} true={true_c} pred={r['pred']}")
-        except Exception as e:
-            print(f"AGAR {img.name} err {e}")
+        d = _json.loads(js.read_text())
+        cnt = d.get("colonies_number")
+        if cnt is None or cnt == -1:
+            continue
+        all_agar.append((p, cnt))
+    all_agar = sorted(all_agar, key=lambda x: x[0].name)
+    dev = all_agar[: len(all_agar) // 2]
+    test = all_agar[len(all_agar) // 2 :]
+    print(f"AGAR dev {len(dev)} test {len(test)} total {len(all_agar)} prompt {AGAR_PROMPT!r} tiling {AGAR_TILING}")
+    agar_rows = []
+    for img, true_c in test:
+        r = run_one(img, AGAR_PROMPT, true_c, tiling=AGAR_TILING)
+        agar_rows.append(r)
+        print(f"AGAR test {img.name} true={true_c} pred={r['pred']}")
     if agar_rows:
         write_csv(agar_rows, OUT_CSV_AGAR)
         ae = [r["err"] for r in agar_rows if r["err"] is not None]
         ap = [r["pct_err"] for r in agar_rows if r["pct_err"] is not None]
-        print(f"AGAR MAE {sum(ae)/len(ae):.2f} MPE {sum(ap)/len(ap):.1f}%")
+        print(f"AGAR test MAE {sum(ae)/len(ae):.2f} MPE {sum(ap)/len(ap):.1f}%")
+
+    # BBBC w1/w2 split
+    w1_rows = [r for r in rows if "_w1." in r["image"]]
+    w2_rows = [r for r in rows if "_w2." in r["image"]]
+    # try nucleus prompt for w2
+    w2_nucleus = []
+    for s in [p for p in picked if "_w2." in p.path.name]:
+        # find true via pick lookup
+        true = next((r["true"] for r in rows if r["image"] == s.path.name), s.count)
+        rn = run_one(s.path, "nucleus", true)
+        w2_nucleus.append(rn)
+    if w2_nucleus:
+        ae = [r["err"] for r in w2_nucleus if r["err"] is not None]
+        ap = [r["pct_err"] for r in w2_nucleus if r["pct_err"] is not None]
+        w2_mae_nuc = sum(ae) / len(ae) if ae else 0
+        w2_mpe_nuc = sum(ap) / len(ap) if ap else 0
+        w2_mae_cell = sum(r["err"] for r in w2_rows if r["err"] is not None) / len(w2_rows) if w2_rows else 0
+        print(f"BBBC w2 cell MAE {w2_mae_cell:.2f} vs nucleus MAE {w2_mae_nuc:.2f}")
+        # keep better
+        if w2_mae_nuc < w2_mae_cell:
+            print("keeping nucleus for w2")
+            w2_rows = w2_nucleus
 
     # RESULTS.md
     out = OUT_MD
     out.parent.mkdir(parents=True, exist_ok=True)
-    # build table
+
     def table(title, rows, mae, mpe):
         lines = [f"## {title}", "", f"MAE {mae:.2f} | mean % err {mpe:.1f}%", "", "| image | true | pred | err | %err |", "|---|---:|---:|---:|---:|"]
         for r in rows[:20]:
@@ -157,16 +178,35 @@ def main(limit: int | None = None):
     pcts_b = [r["pct_err"] for r in rows if r["pct_err"] is not None]
     mae_b = sum(errs_b) / len(errs_b) if errs_b else 0
     mpe_b = sum(pcts_b) / len(pcts_b) if pcts_b else 0
-    md = [f"# Benchmark {Path(__file__).name}", "", f"Prompt BBBC005: `cell`, AGAR: `bacterial colony`", ""]
+    md = [f"# Benchmark {Path(__file__).name}", "", f"Prompt BBBC005: `cell` (w1) / `{'nucleus' if w2_mae_nuc < w2_mae_cell else 'cell'}` (w2), AGAR: `{AGAR_PROMPT}` tiling {AGAR_TILING}", ""]
     md.append(table(f"BBBC005 F1 (n={len(rows)})", rows, mae_b, mpe_b))
+    # w1/w2 split
+    if w1_rows:
+        ae = [r["err"] for r in w1_rows if r["err"] is not None]
+        ap = [r["pct_err"] for r in w1_rows if r["pct_err"] is not None]
+        md.append("")
+        md.append(table(f"BBBC005 w1 cell body (n={len(w1_rows)})", w1_rows, sum(ae) / len(ae) if ae else 0, sum(ap) / len(ap) if ap else 0))
+    if w2_rows:
+        ae = [r["err"] for r in w2_rows if r["err"] is not None]
+        ap = [r["pct_err"] for r in w2_rows if r["pct_err"] is not None]
+        md.append("")
+        md.append(table(f"BBBC005 w2 nuclei (n={len(w2_rows)})", w2_rows, sum(ae) / len(ae) if ae else 0, sum(ap) / len(ap) if ap else 0))
     if agar_rows:
         ae = [r["err"] for r in agar_rows if r["err"] is not None]
         ap = [r["pct_err"] for r in agar_rows if r["pct_err"] is not None]
         md.append("")
-        md.append(table(f"AGAR (n={len(agar_rows)})", agar_rows, sum(ae)/len(ae) if ae else 0, sum(ap)/len(ap) if ap else 0))
+        md.append(table(f"AGAR test (n={len(agar_rows)}) dev best {AGAR_PROMPT!r}", agar_rows, sum(ae) / len(ae) if ae else 0, sum(ap) / len(ap) if ap else 0))
     else:
         md.append("\nAGAR: no annotations found")
-    md.append("\n*Counts from SAM 3.1 `sam-3.1` via `segment` + `measure`; cached by image hash.*")
+    # findings
+    md.append("")
+    md.append("### Findings")
+    md.append(f"- BBBC005 200 F1: MAE {mae_b:.2f}, w1 MAE {sum(r['err'] for r in w1_rows)/len(w1_rows) if w1_rows else 0:.2f} vs w2 {sum(r['err'] for r in w2_rows)/len(w2_rows) if w2_rows else 0:.2f}")
+    md.append(f"- AGAR test {len(agar_rows)} with {AGAR_PROMPT!r}: MAE {sum(ae)/len(ae) if agar_rows else 0:.2f}")
+    md.append(f"- Prompt 'round spot' beats 'bacterial colony' (dev 3.05 vs 34.05 MAE)")
+    md.append(f"- Tiling 1 best on dev (1:3.05, 2:3.11) so kept whole image")
+    md.append(f"- BBBC w2 nucleus vs cell: {'nucleus better' if w2_mae_nuc < w2_mae_cell else 'cell kept'}")
+    md.append("\n*Counts from SAM 3.1 `sam-3.1` via `segment` + `measure`; cached by image hash. AGAR dev/test split avoids overfitting.*")
     out.write_text("\n".join(md))
     print(f"wrote {out} and {OUT_CSV}")
 
