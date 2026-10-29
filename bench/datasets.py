@@ -58,10 +58,18 @@ def parse_bbbc005_count(name: str) -> int:
     raise ValueError(f"no ground-truth count in filename: {name!r}")
 
 
+def _parse_bbbc005_count_for_dataset(name: str) -> int:
+    # BBBC005 filenames use _C<number>_ (uppercase) — handle separately
+    m = re.search(r"_C(\d+)_", name)
+    if m:
+        return int(m.group(1))
+    return parse_bbbc005_count(name)
+
+
 def list_bbbc005(root: str | Path, plane: str = "F1") -> list[Sample]:
     """List BBBC005 images for one focus plane with filename counts."""
     return [
-        Sample(path=p, count=parse_bbbc005_count(p.name))
+        Sample(path=p, count=_parse_bbbc005_count_for_dataset(p.name))
         for p in list_image_files(root)
         if matches_plane(p.name, plane)
     ]

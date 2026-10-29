@@ -107,7 +107,30 @@ def _cache_path(img_hash: str, prompt: str) -> Path:
 def _guess_mime(image_bytes: bytes) -> str:
     if image_bytes[:2] == b"\xff\xd8":
         return "image/jpeg"
+    if image_bytes[:4] in (b"II*\x00", b"MM\x00*"):
+        return "image/tiff"
     return "image/png"
+
+
+def _to_png_bytes(image_bytes: bytes) -> tuple[bytes, str]:
+    # Convert TIFF/other to PNG for SAM API (which expects png/jpeg)
+    if image_bytes[:4] in (b"II*\x00", b"MM\x00*"):
+        try:
+            from PIL import Image
+            import io
+
+            im = Image.open(io.BytesIO(image_bytes))
+            # normalize to 8-bit
+            if im.mode not in ("RGB", "RGBA", "L"):
+                im = im.convert("RGB")
+            elif im.mode == "RGBA":
+                im = im.convert("RGB")
+            out = io.BytesIO()
+            im.save(out, format="PNG")
+            return out.getvalue(), "image/png"
+        except Exception:
+            pass
+    return image_bytes, _guess_mime(image_bytes)
 
 
 def _extract_output_text(payload: dict | list) -> str:
@@ -141,6 +164,7 @@ def parse_output_text(output_text: str) -> tuple[list[Box], list[str], int, int]
 
 
 def _call_sam(image_bytes: bytes, prompt: str, mime: str) -> str:
+    image_bytes, mime = _to_png_bytes(image_bytes)
     b64 = base64.b64encode(image_bytes).decode("ascii")
     body = {
         "model": MODEL,
