@@ -45,6 +45,14 @@ Summary (Oct 29 long session 2, accuracy+characterization):
 | 2026-10-31 | S4 Step 6: Muse wording per group (constrained vocab) | labvision/describe.py per-group contact sheet (≤6 crops) + feature summary → Muse → validated color/shape/margin/elevation/surface; agent+app use Python grouping + Muse wording; tests/test_describe.py 4 passed (57 total). |
 
 ---
+Summary (Oct 31 Session 4, measured features + honest grouping):
+- Done: honest findings (ARI random, flag 20%<90% baseline), features.py (Lab bg-sub, circularity, log diam, texture), morphotypes.py (fixed global scales, avg linkage T=2.5 cw=2.0, small merge), tuning dev 69%→test 80%/90% baseline, flag removed, Muse per-group wording (constrained vocab).
+- Blocked: Python features ARI ~0, flag not beating baseline, contamination recall 0/1; n=20 test plates is small; no new SAM needed.
+- Numbers: AGAR MAE 17.7 BBBC 5.48/18.95; v1 morphotypes 37.9% purity ARI 0.006 flag 20%; v2 Python 97% purity ARI -0.00 flag 80% bal 67% vs 50% baseline, contam 0/1; 57 pytest passed.
+- Cost: 0 new SAM (cache/GT boxes), ~35 Muse calls earlier + ~0 for v2 (features only) + future per-group Muse ~28 calls; total cum ~$1.9 under caps.
+- Next: polish app (descriptive-only table), update README, record video Nov 1-4.
+
+---
 Summary (Oct 31 Session 3, morphotypes + fixes):
 - Done: S3 Step 0-4: default prompt fix, plate px via HoughCircles, batch all colonies, morphotype grouping (morphology+terciles), bench ARI/purity/flag, agent+app tables (43 tests green).
 - Blocked: ARI 0.01 / purity 37.9% — morphology overlap + size terciles over-split pure plates (flag 20%); 5270 plate partial refusal (logged); dense plate 518 undercount unresolved.
