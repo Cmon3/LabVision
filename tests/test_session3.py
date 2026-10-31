@@ -134,11 +134,18 @@ def test_characterize_batches_all_colonies(tmp_path):
 
     captured = {}
 
-    def fake_char(image_path, boxes, diameters_mm=None):
-        captured["n"] = len(boxes)
-        captured["boxes"] = boxes
-        # return dummy morph
-        return [{"index": i, "color": "white", "shape": "circular", "margin": "entire", "elevation": "convex", "opacity": "opaque", "surface": "smooth", "morphotype": "A", "morphotype_desc": "white circular", "purity_flag": "Single morphotype (consistent with pure culture)", "mean_diameter_mm": 1.0, "size_class": "medium", "count_in_morphotype": 30} for i in range(len(boxes))]
+    # new pipeline: features + clustering + describe per group
+    def fake_extract(image, boxes=None, masks=None):
+        n = len(masks) if masks is not None and hasattr(masks, "shape") else len(boxes) if boxes else 30
+        captured["n"] = n
+        # return dummy features
+        return np.zeros((n, 6))
+
+    def fake_cluster(feats, threshold=2.5, color_weight=1.0, means=None, scales=None):
+        return np.zeros(feats.shape[0], dtype=int)  # all one group
+
+    def fake_describe(image_path, boxes, feature_summary=None):
+        return {"color": "cream", "shape": "circular", "margin": "entire", "elevation": "convex", "surface": "smooth"}
 
     def fake_muse_all(messages, tools=None, use_cache=True):
         n = getattr(fake_muse_all, "n", 0)
@@ -156,10 +163,11 @@ def test_characterize_batches_all_colonies(tmp_path):
     fake_muse_all.n = 0
     with patch.object(ag, "_call_muse", side_effect=fake_muse_all):
         with patch.object(ag, "segment", return_value=fake_seg):
-            with patch("labvision.characterize.characterize", side_effect=fake_char):
-                out = ag.run_agent(p, "count and characterize", use_cache=False)
+            with patch("labvision.features.extract_features", side_effect=fake_extract):
+                with patch("labvision.morphotypes.cluster_plate", side_effect=fake_cluster):
+                    with patch("labvision.describe.describe_group", side_effect=fake_describe):
+                        out = ag.run_agent(p, "count and characterize", use_cache=False)
     assert captured.get("n") == 30, f"characterize got {captured.get('n')} expected 30 (all colonies)"
-    # report should contain colony types
     assert "Colony types" in out["report"]
 
 

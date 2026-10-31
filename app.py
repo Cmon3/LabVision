@@ -67,24 +67,40 @@ def process(image, request: str):
         morph_df = None
         if "characterize" in request.lower() and seg.boxes:
             try:
-                from labvision.characterize import characterize
+                import numpy as _np
+                from labvision.features import extract_features as _feat
+                from labvision.morphotypes import cluster_plate as _clust
+                from labvision.config import MORPHOTYPE_THRESHOLD as _T, MORPHOTYPE_COLOR_WEIGHT as _CW
 
                 boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg.boxes]
-                diams = [r.get("diameter_mm", r.get("diameter_px", 0)) for r in rows] if rows and isinstance(rows, list) else None
-                has_mm = bool(rows and rows[0].get("diameter_mm")) if rows else False
-                char = characterize(tmp, boxes_for_char, diameters_mm=diams if has_mm else None)
-                # aggregate to morphotype table: label, description, count, mean diameter
-                from collections import Counter
-
-                cnt = Counter(c["morphotype"] for c in char)
-                # one row per morphotype with mean diameter
+                # use masks if available for features
+                if masks.size and masks.shape[0] == len(seg.boxes):
+                    feats = _feat(np.array(Image.open(tmp).convert("RGB")), masks=masks)
+                else:
+                    feats = _feat(np.array(Image.open(tmp).convert("RGB")), boxes=boxes_for_char)
+                labels = _clust(feats, threshold=_T, color_weight=_CW)
+                uniq = sorted(set(labels))
+                # per-group Muse wording
                 agg = {}
-                for c in char:
-                    mt = c["morphotype"]
-                    if mt not in agg:
-                        agg[mt] = {"label": mt, "description": c["morphotype_desc"], "count": cnt[mt], "mean_diameter_mm": round(c["mean_diameter_mm"], 2)}
+                for lab in uniq:
+                    lab_char = chr(ord("A") + uniq.index(lab))
+                    g_mask = labels == lab
+                    count = int(g_mask.sum())
+                    # feature summary for Muse
+                    g_feats = feats[g_mask]
+                    summary = {"lab": g_feats[:, 0:3].mean(axis=0).tolist() if g_feats.size else [], "circularity": float(g_feats[:, 3].mean()) if g_feats.size else 0, "log_diam": float(g_feats[:, 4].mean()) if g_feats.size else 0, "texture": float(g_feats[:, 5].mean()) if g_feats.size else 0}
+                    group_boxes = [boxes_for_char[i] for i in range(len(boxes_for_char)) if labels[i] == lab][:6]
+                    try:
+                        from labvision.describe import describe_group as _desc
+                        desc = _desc(tmp, group_boxes, feature_summary=summary)
+                    except Exception:
+                        desc = {"color": "cream", "shape": "circular", "margin": "entire", "elevation": "convex", "surface": "smooth"}
+                    desc_str = f"{desc['color']}, {desc['shape']}, {desc['margin']} margin, {desc['elevation']}, {desc['surface']}"
+                    # mean diameter from features
+                    mean_log = float(g_feats[:, 4].mean()) if g_feats.size else 0
+                    mean_diam = float(_np.exp(mean_log)) if mean_log else 0
+                    agg[lab_char] = {"label": lab_char, "description": desc_str, "count": count, "mean_diameter_px": round(mean_diam, 1)}
                 morph_df = pd.DataFrame(sorted(agg.values(), key=lambda r: r["label"]))
-                # append purity flag as extra info row via report (already in run_agent)
             except Exception:
                 morph_df = None
         else:

@@ -233,15 +233,63 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                         result = {"error": "call segment first"}
                     else:
                         try:
-                            from labvision.characterize import characterize as char_fn
+                            from labvision.features import extract_features as _feat
+                            from labvision.morphotypes import cluster_plate as _clust
+                            from labvision.config import MORPHOTYPE_THRESHOLD as _T, MORPHOTYPE_COLOR_WEIGHT as _CW
 
+                            # build masks/boxes for features
+                            masks = seg_result.decoded_masks()
                             boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg_result.boxes]
-                            # also pass measured diameters for size/morphotype grouping
-                            diams = [r.get("diameter_mm", r.get("diameter_px", 0)) for r in measure_rows] if measure_rows else None
-                            plate_ok = bool(measure_rows and "diameter_mm" in measure_rows[0]) if measure_rows else False
-                            char_results = char_fn(image_path, boxes_for_char, diameters_mm=diams if plate_ok else None)
+                            # extract features: prefer masks if available and valid
+                            if masks.size and masks.shape[0] == len(seg_result.boxes):
+                                feats = _feat(img_arr, masks=masks)
+                            else:
+                                feats = _feat(img_arr, boxes=boxes_for_char)
+                            labels = _clust(feats, threshold=_T, color_weight=_CW)
+                            # per-group Muse wording
+                            uniq = sorted(set(labels))
+                            # representative crops per group + feature summary
+                            char_results = []
+                            group_descs = {}
+                            for idx, lab in enumerate(uniq):
+                                mask = labels == lab
+                                # feature summary for this group
+                                g_feats = feats[mask]
+                                summary = {
+                                    "lab": g_feats[:, 0:3].mean(axis=0).tolist() if g_feats.size else [],
+                                    "circularity": float(g_feats[:, 3].mean()) if g_feats.size else 0,
+                                    "log_diam": float(g_feats[:, 4].mean()) if g_feats.size else 0,
+                                    "texture": float(g_feats[:, 5].mean()) if g_feats.size else 0,
+                                }
+                                # up to 6 boxes from this group
+                                group_boxes = [boxes_for_char[i] for i in range(len(boxes_for_char)) if labels[i] == lab][:6]
+                                try:
+                                    from labvision.describe import describe_group as _desc
+
+                                    desc = _desc(image_path, group_boxes, feature_summary=summary)
+                                except Exception:
+                                    desc = {"color": "cream", "shape": "circular", "margin": "entire", "elevation": "convex", "surface": "smooth"}
+                                group_descs[lab] = desc
+                            # annotate per-colony results for report
+                            for i, lab in enumerate(labels):
+                                lab_char = chr(ord("A") + sorted(set(labels)).index(lab))
+                                desc = group_descs[lab]
+                                # mean diam for group
+                                g_mask = labels == lab
+                                mean_diam = float(feats[g_mask, 4].mean()) if g_mask.any() else 0
+                                char_results.append({
+                                    "index": i,
+                                    "morphotype": lab_char,
+                                    "morphotype_desc": f"{desc['color']}, {desc['shape']}, {desc['margin']} margin, {desc['elevation']}, {desc['surface']}",
+                                    "color": desc["color"],
+                                    "shape": desc["shape"],
+                                    "margin": desc["margin"],
+                                    "elevation": desc["elevation"],
+                                    "surface": desc["surface"],
+                                    "mean_diameter_px": float(np.exp(mean_diam)) if mean_diam else 0,
+                                    "count_in_morphotype": int((labels == lab).sum()),
+                                })
                             result = {"count": len(char_results), "details": char_results[:3]}
-                            # if morphotypes aggregated, include them
                             if char_results and "morphotype" in char_results[0]:
                                 from collections import Counter as _Cnt
 

@@ -42,6 +42,7 @@ Summary (Oct 29 long session 2, accuracy+characterization):
 | 2026-10-31 | S4 Step 4: tune on dev (grid T×color_weight) + report on test | bench/run_morphotypes_v2.py dev 19 / test 20 plates 351 crops; best T=2.5 cw=2.0 dev bal 69% test flag 80% vs baseline 90%, ARI -0.00 purity 97% contam 0/1; n small noted. |
 
 | 2026-10-31 | S4 Step 5: decision — flag removed (rule) | Test flag 80% (16/20) not > baseline 90% (18/20); contamination recall 0/1 with 3 false alarms ≤9 (half pure) but overall fail; agent/app flag removed, Colony types labeled descriptive only. |
+| 2026-10-31 | S4 Step 6: Muse wording per group (constrained vocab) | labvision/describe.py per-group contact sheet (≤6 crops) + feature summary → Muse → validated color/shape/margin/elevation/surface; agent+app use Python grouping + Muse wording; tests/test_describe.py 4 passed (57 total). |
 
 ---
 Summary (Oct 31 Session 3, morphotypes + fixes):
