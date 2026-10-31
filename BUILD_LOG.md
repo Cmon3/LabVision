@@ -35,3 +35,4 @@ Summary (Oct 29 long session 2, accuracy+characterization):
 - Next: tune dense plate handling, polish app, record video.
 
 | 2026-10-31 | Finding: Muse Spark Open refuses presumptive organism ID | Raw responses in runs/characterize_raw/ show a safety refusal (biological-risk / medical-advice policy). The model accepts morphology (color, shape, margin, elevation, size). Decision: drop species ID; group colonies into morphotypes; evaluate grouping purity against AGAR species labels. |
+| 2026-10-31 | S3 Step 1 fixes: default prompt AGAR_PROMPT, plate px via plate.py (no model param), batch all colonies | labvision/agent.py: removed plate_diameter_px from TOOLS, auto-detect plate via HoughCircles; labvision/plate.py detect_plate_diameter_px; labvision/characterize.py batch up to 24; tests/test_session3.py 5 passed (total 40). |

@@ -33,7 +33,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "segment",
-            "description": "Segment image for a noun phrase (one concept, e.g. 'bacterial colony', 'cell'). Returns count and image size.",
+            "description": "Segment image for a noun phrase (one concept, e.g. 'round spot', 'cell'). Returns count and image size.",
             "parameters": {
                 "type": "object",
                 "properties": {"prompt": {"type": "string", "description": "short noun phrase"}},
@@ -45,13 +45,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "measure",
-            "description": "Measure current masks: count, areas, diameters. Optionally filter by min_diameter_mm (needs plate_diameter_px).",
+            "description": "Measure current masks: count, areas, diameters (mm if plate detected, otherwise px). Optionally filter by min_diameter_mm.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "min_diameter_mm": {"type": "number"},
-                    "plate_diameter_px": {"type": "number"},
-                    "plate_diameter_mm": {"type": "number"},
+                    "min_diameter_mm": {"type": "number", "description": "filter: keep only colonies >= this diameter in mm"},
                 },
                 "required": [],
             },
@@ -73,12 +71,8 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "characterize",
-            "description": "Characterize colonies by morphology (call after segment). Returns per-type counts.",
-            "parameters": {
-                "type": "object",
-                "properties": {"max_crops": {"type": "integer", "description": "max colonies to characterize (default 12)"}},
-                "required": [],
-            },
+            "description": "Characterize colony morphology (call after segment+measure). Returns morphotypes.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
 ]
@@ -99,9 +93,10 @@ Image: {image_name}
 Quality: {qc_summary}
 Count: {count_display}
 {filter_line}
-Mean diameter: {mean_d:.1f} px ({mean_mm:.2f} mm)
+Mean diameter: {mean_d:.1f} px{mm_part}
 Diameters (px): min {min_d:.1f} max {max_d:.1f}
 Areas (px): mean {mean_a:.0f}
+{plate_note}
 
 {char_section}
 Note: {assistant_note}
@@ -185,7 +180,9 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                     }
                     qc_result = result
                 elif fname == "segment":
-                    prompt = args.get("prompt", "bacterial colony")
+                    from labvision.config import AGAR_PROMPT as _DEFAULT_PROMPT
+
+                    prompt = args.get("prompt", _DEFAULT_PROMPT)
                     seg_result = segment(img_bytes, prompt)
                     # retry once if 0 but QC says not empty (sharp, no glare)
                     if len(seg_result.boxes) == 0 and qc_result is not None and not qc_result.get("is_blurry") and not qc_result.get("glare"):
@@ -205,13 +202,29 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                         result = {"error": "call segment first"}
                     else:
                         masks = seg_result.decoded_masks()
-                        plate_px = args.get("plate_diameter_px")
-                        plate_mm = args.get("plate_diameter_mm", 90.0)
-                        rows = measure_mod.measure_masks(masks, plate_diameter_px=plate_px, plate_diameter_mm=plate_mm)
+                        # plate diameter from Python, never from model
+                        try:
+                            from labvision.plate import detect_plate_diameter_px as _plate_px
+
+                            _plate_px_val = _plate_px(img_arr)
+                        except Exception:
+                            _plate_px_val = None
+                        if _plate_px_val:
+                            rows = measure_mod.measure_masks(masks, plate_diameter_px=_plate_px_val, plate_diameter_mm=90.0)
+                            _plate_info = {"plate_detected": True, "plate_diameter_px": _plate_px_val}
+                        else:
+                            rows = measure_mod.measure_masks(masks)
+                            _plate_info = {"plate_detected": False}
                         if "min_diameter_mm" in args:
-                            rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
+                            if rows and "diameter_mm" in rows[0]:
+                                rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
+                            else:
+                                result = {"error": "no plate detected — sizes in px, cannot filter by mm", "plate_detected": False}
+                                measure_rows = rows
+                                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result)})
+                                continue
                         measure_rows = rows
-                        result = {"count": len(rows), "rows": rows[:5]}  # truncate for LLM
+                        result = {"count": len(rows), "rows": rows[:5], **_plate_info}
                 elif fname == "ask_rephoto":
                     rephoto_reason = args.get("reason", "")
                     result = {"asked": True, "reason": rephoto_reason}
@@ -222,16 +235,18 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                         try:
                             from labvision.characterize import characterize as char_fn
 
-                            # convert boxes to x,y,width,height for characterize
                             boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg_result.boxes]
-                            max_crops = int(args.get("max_crops", 12))
-                            boxes_for_char = boxes_for_char[:max_crops]
-                            char_results = char_fn(image_path, boxes_for_char)
-                            # summarize counts per presumptive type
-                            from collections import Counter
+                            # also pass measured diameters for size/morphotype grouping
+                            diams = [r.get("diameter_mm", r.get("diameter_px", 0)) for r in measure_rows] if measure_rows else None
+                            plate_ok = bool(measure_rows and "diameter_mm" in measure_rows[0]) if measure_rows else False
+                            char_results = char_fn(image_path, boxes_for_char, diameters_mm=diams if plate_ok else None)
+                            result = {"count": len(char_results), "details": char_results[:3]}
+                            # if morphotypes aggregated, include them
+                            if char_results and "morphotype" in char_results[0]:
+                                from collections import Counter as _Cnt
 
-                            cnt = Counter(r["presumptive_organism"] for r in char_results)
-                            result = {"counts": dict(cnt), "details": char_results[:3]}
+                                cnt = _Cnt(r["morphotype"] for r in char_results)
+                                result["morphotype_counts"] = dict(cnt)
                         except Exception as e:
                             result = {"error": str(e)[:200]}
                 else:
@@ -270,36 +285,64 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
     count = len(measure_rows) if measure_rows else (len(seg_result.boxes) if seg_result else 0)
     # TNTC: >300
     count_display = "Too numerous to count (>300 CFU): dilute and re-plate" if count > 300 else f"{count} objects"
+    has_mm = bool(measure_rows and "diameter_mm" in measure_rows[0])
     if measure_rows:
         ds = [r["diameter_px"] for r in measure_rows]
         areas = [r["area_px"] for r in measure_rows]
         mean_d = sum(ds) / len(ds) if ds else 0
         mean_a = sum(areas) / len(areas) if areas else 0
-        mean_mm = sum(r.get("diameter_mm", 0) for r in measure_rows) / len(measure_rows) if measure_rows and "diameter_mm" in measure_rows[0] else 0
+        mean_mm = sum(r.get("diameter_mm", 0) for r in measure_rows) / len(measure_rows) if has_mm else 0
         min_d, max_d = min(ds) if ds else 0, max(ds) if ds else 0
         filter_line = ""
     elif seg_result and seg_result.boxes:
-        # fallback from boxes if measure not called
         mean_d = min_d = max_d = mean_a = mean_mm = 0
         filter_line = "(measure not run)"
     else:
         mean_d = min_d = max_d = mean_a = mean_mm = 0
         filter_line = ""
 
-    # detect filter in request (e.g. "larger than 2 mm")
     import re
 
     m = re.search(r"larger than\s+([\d.]+)\s*mm", request, re.I)
     filter_line = f"Filter: diameter >= {m.group(1)} mm" if m else ""
+    mm_part = f" ({mean_mm:.2f} mm)" if has_mm else ""
+    plate_note = "Plate detected — sizes in mm (90 mm plate)" if has_mm else "No plate detected — sizes in px"
+    # if request asked for mm filter but no plate, note it
+    if m and not has_mm:
+        plate_note += " (cannot filter by mm without plate)"
 
     rephoto_line = f"Action: Please retake photo — {rephoto_reason}" if rephoto_reason else ""
-    # characterization section (presumptive)
     char_section = ""
     if char_results:
-        from collections import Counter
+        # morphotype-aware: group already has morphotype field if characterize grouped
+        if "morphotype" in char_results[0]:
+            from collections import Counter as _C2
 
-        cnt = Counter(r["presumptive_organism"] for r in char_results)
-        char_section = "Colony types (presumptive): " + ", ".join(f"{k} {v}" for k, v in cnt.items())
+            # char_results may have morphotypes A,B... with purity_flag attached to first entry
+            cnt = _C2(r["morphotype"] for r in char_results)
+            lines = []
+            for mt in sorted(cnt.keys()):
+                ex = next(r for r in char_results if r["morphotype"] == mt)
+                desc = ex.get("morphotype_desc", ex.get("color", "") + " " + ex.get("shape", ""))
+                n = cnt[mt]
+                mdiam = ex.get("mean_diameter_mm", 0)
+                diam_str = f", mean {mdiam:.1f} mm" if mdiam else ""
+                lines.append(f"  {mt}: {desc} — {n} colonies{diam_str}")
+            char_section = "Colony types:\n" + "\n".join(lines)
+            # purity flag is stored on first result or derived
+            purity = char_results[0].get("purity_flag", "")
+            if purity:
+                char_section += f"\n{purity}"
+        else:
+            # fallback for old morphology without grouping
+            from collections import Counter
+
+            # group by morphology tuple
+            def _key(r):
+                return (r.get("color"), r.get("shape"), r.get("margin"), r.get("elevation"))
+            from collections import Counter as _C3
+            cnt = _C3(_key(r) for r in char_results)
+            char_section = "Colony types: " + ", ".join(f"{k} x{v}" for k, v in cnt.items())
 
     report = REPORT_TEMPLATE.format(
         request=request,
@@ -308,10 +351,11 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         count_display=count_display,
         filter_line=filter_line,
         mean_d=mean_d,
-        mean_mm=mean_mm,
+        mm_part=mm_part,
         min_d=min_d,
         max_d=max_d,
         mean_a=mean_a,
+        plate_note=plate_note,
         assistant_note=assistant_note.strip() if "assistant_note" in locals() else "",
         rephoto_line=rephoto_line,
         char_section=char_section,

@@ -56,7 +56,9 @@ def process(image, request: str):
 
     # overlay
     try:
-        seg = segment(Path(tmp).read_bytes(), "cell" if "cell" in request.lower() else "bacterial colony")
+        from labvision.config import AGAR_PROMPT as _AP
+
+        seg = segment(Path(tmp).read_bytes(), "cell" if "cell" in request.lower() else _AP)
         masks = seg.decoded_masks()
         overlay = _overlay(tmp, seg.boxes, masks)
         rows = measure_masks(masks)
@@ -67,8 +69,11 @@ def process(image, request: str):
             try:
                 from labvision.characterize import characterize
 
-                boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg.boxes[:12]]
-                char = characterize(tmp, boxes_for_char)
+                boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg.boxes]
+                # include diameters for morphotype grouping
+                diams = [r.get("diameter_mm", r.get("diameter_px", 0)) for r in rows] if rows and isinstance(rows, list) else None
+                has_mm = bool(rows and rows[0].get("diameter_mm")) if rows else False
+                char = characterize(tmp, boxes_for_char, diameters_mm=diams if has_mm else None)
                 morph_df = pd.DataFrame(char)
             except Exception:
                 morph_df = None
@@ -98,7 +103,7 @@ with gr.Blocks(title="LabVision Copilot") as demo:
     with gr.Row():
         out_img = gr.Image(label="Overlay (masks + boxes)")
         out_table = gr.Dataframe(label="Measurements")
-    morph_table = gr.Dataframe(label="Morphology (presumptive) — confirm with standard microbiological methods")
+    morph_table = gr.Dataframe(label="Colony types — confirm with standard microbiological methods")
     out_report = gr.Textbox(label="Report", lines=10)
     out_csv = gr.File(label="CSV download")
     btn.click(process, inputs=[inp_img, inp_req], outputs=[out_img, out_table, morph_table, out_report, out_csv])
