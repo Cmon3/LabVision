@@ -39,3 +39,11 @@ Summary (Oct 29 long session 2, accuracy+characterization):
 | 2026-10-31 | S3 Step 2 T6b morphotypes: morphology only + Python grouping | labvision/characterize.py: prompt color/shape/margin/elevation/opacity/surface (no organism), _group_morphotypes exact tuple+terciles -> A,B,C with counts/mean mm, purity flag; tests 3 more (total 43). |
 | 2026-10-31 | S3 Step 3 bench morphotypes: ARI/purity/flag | bench/run_morphotypes.py GT boxes 351 crops/20 plates: ARI 0.01 purity 37.9% flag 20% (4/20); bench/morphotypes.csv + RESULTS.md Morphotypes section (4-line findings); numpy ARI, no sklearn. |
 | 2026-10-31 | S3 Step 4 agent+app Colony types table + purity flag | labvision/agent.py report Colony types (A,B,C desc count mean mm) + flag; app.py aggregated morphotype DataFrame; README removed diagnosis wording; 43 tests. |
+
+---
+Summary (Oct 31 Session 3, morphotypes + fixes):
+- Done: S3 Step 0-4: default prompt fix, plate px via HoughCircles, batch all colonies, morphotype grouping (morphology+terciles), bench ARI/purity/flag, agent+app tables (43 tests green).
+- Blocked: ARI 0.01 / purity 37.9% — morphology overlap + size terciles over-split pure plates (flag 20%); 5270 plate partial refusal (logged); dense plate 518 undercount unresolved.
+- Numbers: AGAR MAE 17.7 (test 20), BBBC w1 5.48 w2 18.95; morphotypes 351 crops/20 plates ARI 0.01 purity 37.9% flag 4/20; 43 pytest passed.
+- Cost: 0 new SAM this session (cached), ~35 Muse vision calls ~$0.08 (total ~$1.9 cum under $60+$20 caps, <300 SAM images).
+- Next: polish app (overlay toggle, CSV), README results table, video script (Nov 1-4 buffer).
