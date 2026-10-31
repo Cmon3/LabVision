@@ -1,0 +1,385 @@
+{
+  "dev": {
+    "per_plate": [
+      {
+        "image": "11761.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": false,
+        "n_true_species": 1,
+        "n_pred_types": 2,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "11764.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": false,
+        "n_true_species": 1,
+        "n_pred_types": 2,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "11773.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": true,
+        "n_true_species": 2,
+        "n_pred_types": 1,
+        "n_crops": 5,
+        "has_contamination": false
+      },
+      {
+        "image": "11884.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": false,
+        "n_true_species": 2,
+        "n_pred_types": 4,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "11890.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 3,
+        "has_contamination": false
+      },
+      {
+        "image": "11924.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": false,
+        "n_true_species": 1,
+        "n_pred_types": 3,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "11955.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": true,
+        "n_true_species": 2,
+        "n_pred_types": 1,
+        "n_crops": 4,
+        "has_contamination": false
+      },
+      {
+        "image": "12028.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "12031.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": false,
+        "n_true_species": 1,
+        "n_pred_types": 3,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "12033.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": false,
+        "n_true_species": 2,
+        "n_pred_types": 2,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "13895.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 19,
+        "has_contamination": false
+      },
+      {
+        "image": "13938.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "14130.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": false,
+        "n_true_species": 2,
+        "n_pred_types": 2,
+        "n_crops": 18,
+        "has_contamination": false
+      },
+      {
+        "image": "14380.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "14410.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": false,
+        "n_true_species": 2,
+        "n_pred_types": 2,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "14512.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 15,
+        "has_contamination": false
+      },
+      {
+        "image": "14581.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "14618.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "14627.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": false,
+        "n_true_species": 2,
+        "n_pred_types": 2,
+        "n_crops": 12,
+        "has_contamination": false
+      }
+    ],
+    "flag_acc": 0.6842105263157895,
+    "bal_acc": 0.6904761904761905,
+    "acc_pure": 0.6666666666666666,
+    "acc_mixed": 0.7142857142857143,
+    "mean_ari": 0.026951406651056407,
+    "mean_purity": 0.9184210526315791,
+    "contam_recall": 1.0,
+    "baseline_acc": 0.631578947368421,
+    "baseline_bal": 0.5,
+    "n_pure": 12,
+    "n_mixed": 7
+  },
+  "test": {
+    "per_plate": [
+      {
+        "image": "14684.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "349.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "356.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 4,
+        "has_contamination": false
+      },
+      {
+        "image": "4826.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": false,
+        "n_true_species": 1,
+        "n_pred_types": 2,
+        "n_crops": 11,
+        "has_contamination": false
+      },
+      {
+        "image": "4904.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": false,
+        "n_true_species": 1,
+        "n_pred_types": 2,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "510.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "518.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "5206.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "5207.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 6,
+        "has_contamination": false
+      },
+      {
+        "image": "5212.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "525.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "5270.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "5271.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "5308.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 10,
+        "has_contamination": false
+      },
+      {
+        "image": "5312.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "734.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": true,
+        "n_true_species": 2,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": true
+      },
+      {
+        "image": "735.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "736.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": false,
+        "n_true_species": 1,
+        "n_pred_types": 2,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "8386.jpg",
+        "true_is_pure": false,
+        "pred_is_pure": false,
+        "n_true_species": 2,
+        "n_pred_types": 3,
+        "n_crops": 20,
+        "has_contamination": false
+      },
+      {
+        "image": "971.jpg",
+        "true_is_pure": true,
+        "pred_is_pure": true,
+        "n_true_species": 1,
+        "n_pred_types": 1,
+        "n_crops": 20,
+        "has_contamination": false
+      }
+    ],
+    "flag_acc": 0.8,
+    "bal_acc": 0.6666666666666667,
+    "acc_pure": 0.8333333333333334,
+    "acc_mixed": 0.5,
+    "mean_ari": -0.0032544378698224825,
+    "mean_purity": 0.9724999999999999,
+    "contam_recall": 0.0,
+    "baseline_acc": 0.9,
+    "baseline_bal": 0.5,
+    "n_pure": 18,
+    "n_mixed": 2
+  },
+  "best_threshold": 2.5,
+  "best_color_weight": 2.0
+}

@@ -122,36 +122,36 @@ MAE 17.70 | mean % err 11.8%
 
 *Counts from SAM 3.1 `sam-3.1` via `segment` + `measure`; cached by image hash. AGAR dev/test split avoids overfitting.*
 
+## Morphotypes (AGAR test, GT boxes, Python features)
 
+Tuned on dev (19 plates) grid T=[1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0] x color_weight=[1.0, 1.5, 2.0, 2.5, 3.0]; best T=2.5 color_weight=2.0 by dev balanced accuracy. Evaluated on test (20 plates, 351 crops) - n is small.
 
-
-## Morphotypes (AGAR test, GT boxes)
-
-Evaluated 20 plates, 351 crops (max 400) with ground-truth boxes. Grouping via morphology + diameter terciles (Python, not LLM).
-
-- **ARI** (vs species): 0.006
-- **Cluster purity**: 0.379 (share from majority species per morphotype)
-- **Purity flag accuracy**: 20.0% (4/20 plates; pure vs mixed)
-- Plates: 18 pure (1 species) / 2 mixed (>1 species); predicted 2 pure
+- **Flag accuracy**: 80.0% (16/20 test plates; pure vs mixed) | baseline always-pure 90.0% (18/20)
+- **Balanced accuracy**: 66.7% (dev 69.0% baseline 50.0%)
+- **Mean ARI** (per-plate vs species): -0.003 (dev 0.027)
+- **Mean purity**: 0.972 (dev 0.918)
+- **Contamination recall**: 0.0% (0/1 test plates with Contamination flagged as mixed) - dev had 0 such plates
+- Plates test: 18 pure / 2 mixed; predicted 16 pure | dev: 12 pure / 7 mixed
 
 ### Findings
-- ARI 0.01 ≈ 0: grouping is random vs species (1.0 = perfect).
-- Purity 37.9% is low; exact-match on 7 noisy LLM text attributes over-splits.
-- Flag accuracy 20% (4/20) is worse than the trivial "always pure" baseline 90% (18/20 test plates are pure).
-- Cause: size terciles + LLM wording variation; need Python-measured features and a conservative default (one type).
+- Flag accuracy 80% does not beat baseline 90% on test (n=20) - not useful as a contamination flag.
+- ARI -0.00 approx random; Python color+shape+size features separate poorly vs species on this split.
+- Balanced accuracy dev 69% -> test 67% shows generalization gap; contamination recall 0% (test 1 plate).
+- Fix: fixed global scales (not per-plate) keeps default at one type; threshold 2.5 is conservative.
 
-| image | true_species | pred_types | flag correct |
-|---|---|---|---|
-| 14684.jpg | 1 | 3 | ✗ |
-| 349.jpg | 1 | 6 | ✗ |
-| 356.jpg | 1 | 4 | ✗ |
-| 4826.jpg | 1 | 8 | ✗ |
-| 4904.jpg | 1 | 17 | ✗ |
-| 510.jpg | 1 | 10 | ✗ |
-| 518.jpg | 1 | 12 | ✗ |
-| 5206.jpg | 1 | 1 | ✓ |
-| 5207.jpg | 1 | 4 | ✗ |
-| 5212.jpg | 1 | 3 | ✗ |
-| ... 10 more | | | |
+| image | true_species | pred_types | flag correct | has_contam |
+|---|---|---|---|---|
+| 14684.jpg | 1 | 1 | ✓ | False |
+| 349.jpg | 1 | 1 | ✓ | False |
+| 356.jpg | 1 | 1 | ✓ | False |
+| 4826.jpg | 1 | 2 | ✗ | False |
+| 4904.jpg | 1 | 2 | ✗ | False |
+| 510.jpg | 1 | 1 | ✓ | False |
+| 518.jpg | 1 | 1 | ✓ | False |
+| 5206.jpg | 1 | 1 | ✓ | False |
+| 5207.jpg | 1 | 1 | ✓ | False |
+| 5212.jpg | 1 | 1 | ✓ | False |
+| ... 10 more | | | | |
 
-*Morphotypes.csv: per-crop true species vs predicted morphotype; per_plate.csv: purity flag. Cache via runs/cache/.*
+*Features: Lab bg-subtracted, circularity, log diam, texture; clustering average linkage T=2.5 color_weight=2.0; per-plate ARI/purity. n is small (20 plates). Files: bench/morphotypes_v2.csv, tuning.csv.*
+
