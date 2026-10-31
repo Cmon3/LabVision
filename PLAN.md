@@ -6,8 +6,8 @@ Internal target: **submit Nov 4, 17:00 Barcelona**. Core must work by **Oct 31**
 ## Definition of done (what judges see)
 1. Upload a plate photo + "count colonies larger than 2 mm" → masks overlay, count, size table, short report, CSV.
 2. Agent asks for a re-photo when QC fails (blur, glare, empty).
-3. Benchmark tables: counting error on BBBC005 + AGAR, and presumptive-species accuracy on AGAR (5 species).
-5. Colony characterization: morphology per colony type + presumptive organism with confidence and "confirm with standard methods". Users: lab technicians (pharma QC, food/water, research). Never called a diagnosis.
+3. Benchmark tables: counting error on BBBC005 + AGAR, and morphotype grouping purity on AGAR.
+5. Colony characterization: morphology per colony type grouped into morphotypes, with a purity/contamination flag; no organism names. Users: lab technicians (pharma QC, food/water, research). Never called a diagnosis.
 4. Public repo, BUILD_LOG.md, 3-minute video, X post.
 
 ## Budget ($150 Meta credits + $100 Baseten)
@@ -37,7 +37,7 @@ Set a Spend Limit alert in Billing. Measure the cost of the first SAM call befor
 
 ### Day 4 — Fri Oct 30  (Fireworks session 17:00)
 - **T6** `labvision/agent.py`: Muse Spark tool loop. Tools: segment, measure, qc, ask_rephoto. Report template filled only with tool outputs.
-- **T6b** `labvision/characterize.py`: crops of each colony -> Muse Spark Open (vision) -> JSON: color, shape, margin, elevation, size class, presumptive organism (AGAR classes or "unknown") + confidence. Benchmark accuracy + confusion matrix on AGAR ground-truth boxes. Agent tool `characterize`.
+- **T6b** (revised 2026-10-31) `labvision/characterize.py`: morphology per colony (color, shape, margin, elevation, size) -> group colonies into morphotypes (A, B, C...) -> counts per morphotype + purity/contamination flag. No organism names (Muse Spark Open refuses species ID on safety grounds; see BUILD_LOG). Benchmark: grouping purity vs AGAR species labels.
 - **T8c** fix AGAR counting: prompt sweep, tiling, plate crop, mask clipping; tune on a dev split, report on a held-out split.
 - **T7** `labvision/runlog.py`: JSON + CSV per run (inputs, model ids, params, results).
 

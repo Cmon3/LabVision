@@ -33,3 +33,5 @@ Summary (Oct 29 long session 2, accuracy+characterization):
 - Blocked: Muse Spark Open vision refuses presumptive organism ID (safety) → fallback unknown; AGAR 518 dense 298→31 undercount even with best prompt; plate Hough optional not evaluated.
 - Cost: ~350 SAM images × $0.0025 = $0.88 + 20 Muse vision calls ~$0.05, total session ~$0.93 (overall ~$1.8 under $4 cap).
 - Next: tune dense plate handling, polish app, record video.
+
+| 2026-10-31 | Finding: Muse Spark Open refuses presumptive organism ID | Raw responses in runs/characterize_raw/ show a safety refusal (biological-risk / medical-advice policy). The model accepts morphology (color, shape, margin, elevation, size). Decision: drop species ID; group colonies into morphotypes; evaluate grouping purity against AGAR species labels. |
