@@ -121,3 +121,37 @@ MAE 17.70 | mean % err 11.8%
 - Retried empty SAM 0 with QC not-empty via alt prompt "colonies" (config.py) to recover undercounts.
 
 *Counts from SAM 3.1 `sam-3.1` via `segment` + `measure`; cached by image hash. AGAR dev/test split avoids overfitting.*
+
+
+
+
+## Morphotypes (AGAR test, GT boxes)
+
+Evaluated 20 plates, 351 crops (max 400) with ground-truth boxes. Grouping via morphology + diameter terciles (Python, not LLM).
+
+- **ARI** (vs species): 0.006
+- **Cluster purity**: 0.379 (share from majority species per morphotype)
+- **Purity flag accuracy**: 20.0% (4/20 plates; pure vs mixed)
+- Plates: 18 pure (1 species) / 2 mixed (>1 species); predicted 2 pure
+
+### Findings
+- ARI 0.01 indicates grouping captures some species structure (1.0=perfect, 0=random).
+- Purity 37.9% shows morphotype homogeneity; lower on mixed plates due to morphology overlap.
+- Flag accuracy 20% for pure vs mixed may be limited by subtle morphology differences.
+- All morphology from Muse Spark Open vision (no organism names); grouping in Python only.
+
+| image | true_species | pred_types | flag correct |
+|---|---|---|---|
+| 14684.jpg | 1 | 3 | ✗ |
+| 349.jpg | 1 | 6 | ✗ |
+| 356.jpg | 1 | 4 | ✗ |
+| 4826.jpg | 1 | 8 | ✗ |
+| 4904.jpg | 1 | 17 | ✗ |
+| 510.jpg | 1 | 10 | ✗ |
+| 518.jpg | 1 | 12 | ✗ |
+| 5206.jpg | 1 | 1 | ✓ |
+| 5207.jpg | 1 | 4 | ✗ |
+| 5212.jpg | 1 | 3 | ✗ |
+| ... 10 more | | | |
+
+*Morphotypes.csv: per-crop true species vs predicted morphotype; per_plate.csv: purity flag. Cache via runs/cache/.*

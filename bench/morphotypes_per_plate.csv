@@ -1,0 +1,21 @@
+image,n_crops,n_true_species,n_pred_types,true_is_pure,pred_is_pure,purity_flag
+14684.jpg,20,1,3,True,False,3 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+349.jpg,20,1,6,True,False,6 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+356.jpg,4,1,4,True,False,4 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+4826.jpg,11,1,8,True,False,8 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+4904.jpg,20,1,17,True,False,17 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+510.jpg,20,1,10,True,False,10 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+518.jpg,20,1,12,True,False,12 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+5206.jpg,20,1,1,True,True,Single morphotype (consistent with pure culture)
+5207.jpg,6,1,4,True,False,4 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+5212.jpg,20,1,3,True,False,3 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+525.jpg,20,1,10,True,False,10 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+5270.jpg,20,1,3,True,False,3 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+5271.jpg,20,1,2,True,False,2 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+5308.jpg,10,1,1,True,True,Single morphotype (consistent with pure culture)
+5312.jpg,20,1,7,True,False,7 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+734.jpg,20,2,3,False,False,3 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+735.jpg,20,1,9,True,False,9 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+736.jpg,20,1,9,True,False,9 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+8386.jpg,20,2,8,False,False,8 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
+971.jpg,20,1,5,True,False,5 morphotypes detected (possible mixed culture or contamination): confirm with standard microbiological methods.
