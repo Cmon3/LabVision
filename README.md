@@ -24,7 +24,7 @@ Metric: error versus manual counts, per dataset and per condition. The agent rou
 
 ## Responsible use
 
-This is a research quantification tool with human review. It does not provide diagnoses or medical advice. Do not use it for clinical decisions.
+This is a research quantification tool with human review. It does not provide medical advice. Do not use it for clinical decisions.
 
 ## Data and licenses
 

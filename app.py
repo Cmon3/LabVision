@@ -70,11 +70,21 @@ def process(image, request: str):
                 from labvision.characterize import characterize
 
                 boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in seg.boxes]
-                # include diameters for morphotype grouping
                 diams = [r.get("diameter_mm", r.get("diameter_px", 0)) for r in rows] if rows and isinstance(rows, list) else None
                 has_mm = bool(rows and rows[0].get("diameter_mm")) if rows else False
                 char = characterize(tmp, boxes_for_char, diameters_mm=diams if has_mm else None)
-                morph_df = pd.DataFrame(char)
+                # aggregate to morphotype table: label, description, count, mean diameter
+                from collections import Counter
+
+                cnt = Counter(c["morphotype"] for c in char)
+                # one row per morphotype with mean diameter
+                agg = {}
+                for c in char:
+                    mt = c["morphotype"]
+                    if mt not in agg:
+                        agg[mt] = {"label": mt, "description": c["morphotype_desc"], "count": cnt[mt], "mean_diameter_mm": round(c["mean_diameter_mm"], 2)}
+                morph_df = pd.DataFrame(sorted(agg.values(), key=lambda r: r["label"]))
+                # append purity flag as extra info row via report (already in run_agent)
             except Exception:
                 morph_df = None
         else:
