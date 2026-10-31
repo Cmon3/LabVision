@@ -328,11 +328,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                 mdiam = ex.get("mean_diameter_mm", 0)
                 diam_str = f", mean {mdiam:.1f} mm" if mdiam else ""
                 lines.append(f"  {mt}: {desc} — {n} colonies{diam_str}")
-            char_section = "Colony types:\n" + "\n".join(lines)
-            # purity flag is stored on first result or derived
-            purity = char_results[0].get("purity_flag", "")
-            if purity:
-                char_section += f"\n{purity}"
+            char_section = "Colony types (descriptive only):\n" + "\n".join(lines)
         else:
             # fallback for old morphology without grouping
             from collections import Counter

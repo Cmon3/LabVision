@@ -113,7 +113,7 @@ with gr.Blocks(title="LabVision Copilot") as demo:
     with gr.Row():
         out_img = gr.Image(label="Overlay (masks + boxes)")
         out_table = gr.Dataframe(label="Measurements")
-    morph_table = gr.Dataframe(label="Colony types — confirm with standard microbiological methods")
+    morph_table = gr.Dataframe(label="Colony types (descriptive only) — Python grouping, Muse wording")
     out_report = gr.Textbox(label="Report", lines=10)
     out_csv = gr.File(label="CSV download")
     btn.click(process, inputs=[inp_img, inp_req], outputs=[out_img, out_table, morph_table, out_report, out_csv])

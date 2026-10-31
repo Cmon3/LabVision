@@ -39,6 +39,9 @@ Summary (Oct 29 long session 2, accuracy+characterization):
 | 2026-10-31 | S3 Step 2 T6b morphotypes: morphology only + Python grouping | labvision/characterize.py: prompt color/shape/margin/elevation/opacity/surface (no organism), _group_morphotypes exact tuple+terciles -> A,B,C with counts/mean mm, purity flag; tests 3 more (total 43). |
 | 2026-10-31 | S3 Step 3 bench morphotypes: ARI/purity/flag | bench/run_morphotypes.py GT boxes 351 crops/20 plates: ARI 0.01 purity 37.9% flag 20% (4/20); bench/morphotypes.csv + RESULTS.md Morphotypes section (4-line findings); numpy ARI, no sklearn. |
 | 2026-10-31 | S3 Step 4 agent+app Colony types table + purity flag | labvision/agent.py report Colony types (A,B,C desc count mean mm) + flag; app.py aggregated morphotype DataFrame; README removed diagnosis wording; 43 tests. |
+| 2026-10-31 | S4 Step 4: tune on dev (grid T×color_weight) + report on test | bench/run_morphotypes_v2.py dev 19 / test 20 plates 351 crops; best T=2.5 cw=2.0 dev bal 69% test flag 80% vs baseline 90%, ARI -0.00 purity 97% contam 0/1; n small noted. |
+
+| 2026-10-31 | S4 Step 5: decision — flag removed (rule) | Test flag 80% (16/20) not > baseline 90% (18/20); contamination recall 0/1 with 3 false alarms ≤9 (half pure) but overall fail; agent/app flag removed, Colony types labeled descriptive only. |
 
 ---
 Summary (Oct 31 Session 3, morphotypes + fixes):
