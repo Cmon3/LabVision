@@ -174,9 +174,12 @@ with gr.Blocks(title="LabVision Copilot") as demo:
     with gr.Row():
         with gr.Column(scale=1):
             inp_img = gr.Image(label="Image (upload or webcam)", type="numpy", sources=["upload", "webcam"])
-            inp_req = gr.Textbox(label="Request", placeholder="count colonies larger than 2 mm", lines=2)
+            with gr.Row():
+                inp_req = gr.Textbox(label="Request", placeholder="count colonies larger than 2 mm", lines=2, scale=3)
+                voice_in = gr.Audio(sources=["microphone", "upload"], type="numpy", label="Voice (hands-free)", scale=1)
             inp_masks = gr.Checkbox(label="Show masks", value=True)
             btn = gr.Button("Run", variant="primary")
+            gr.Markdown("_Voice: click mic, say request (e.g. “count colonies larger than 2 mm”), transcript fills box — edit if needed._")
             gr.Markdown("**Examples** (only if AGAR sample present locally):")
             if _example_paths:
                 gr.Examples(examples=_example_paths, inputs=[inp_img, inp_req], cache_examples=False)
@@ -198,11 +201,25 @@ with gr.Blocks(title="LabVision Copilot") as demo:
     gr.Markdown("Research/QC quantification. Not a medical device.")
     gr.Markdown("Numbers from Python (`measure.py` + plate detection). Muse Spark Open via Baseten writes interpretation only.")
 
-    # state for overlay toggle without re-running SAM
-    def _toggle_overlay(show, img):
-        # we re-generate overlay from last run via process; simpler: just re-run process with same inputs but toggle
-        # Instead, we keep it simple: user hits Run again. For now, toggle triggers process.
-        return show
+    def voice_to_text(audio):
+        if audio is None:
+            return ""
+        try:
+            from labvision.voice import transcribe as _transcribe
+            text = _transcribe(audio)
+            # log transcript (runlog) — best effort
+            try:
+                from labvision.runlog import save_run
+                from datetime import datetime, timezone
+                run_id = f"voice_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+                save_run("runs", run_id, inputs={"request": text}, model_ids={"voice": "muse-voice-transcribe-1.0"}, params={"audio": "mic"}, results=[{"transcript": text}])
+            except Exception:
+                pass
+            return text
+        except Exception as e:
+            return _friendly_error(e)
+
+    voice_in.change(voice_to_text, inputs=[voice_in], outputs=[inp_req])
 
     btn.click(process, inputs=[inp_img, inp_req, inp_masks], outputs=[out_img, out_table, morph_table, out_report, out_ver, out_csv])
     inp_masks.change(process, inputs=[inp_img, inp_req, inp_masks], outputs=[out_img, out_table, morph_table, out_report, out_ver, out_csv])

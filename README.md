@@ -16,7 +16,8 @@ Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entr
 - **TNTC** — counts >300 → “Too numerous to count (>300 CFU): dilute and re-plate”.
 - **Self-check retry** — if SAM returns 0 but the image is sharp, retry once with the alternate prompt `colonies`.
 - **Descriptive colony-type table** — Python features (Lab colour minus agar background, circularity, log diameter, texture) are clustered in Python (fixed global scales, average linkage); Muse Spark Open writes a short description per group from a constrained vocabulary (colours, shapes, margins, elevations, surfaces). The table is descriptive only.
-- **Audit log + CSV** — every run writes `run.json` (inputs, model ids, params) and `results.csv`.
+- **Voice input** — click the mic, say “count colonies larger than 2 mm” hands-free (gloves, biosafety cabinet); Muse Voice Transcribe fills the request box.
+- **Audit log + CSV** — every run writes `run.json` (inputs, model ids, params, including voice transcript) and `results.csv`.
 
 ## Architecture
 
@@ -54,7 +55,8 @@ Full tables in [bench/RESULTS.md](bench/RESULTS.md); raw counts in `bench/result
 ## Meta models used
 
 - **SAM 3.1** — `sam-3.1` on the Meta Model API (text/box/point prompts, one-bit mask encoding) for segmentation.
-- **Muse Spark Open** — `meta-models/muse-spark-open-1026` via Baseten (chat + vision + Voice Transcribe) for the agent planner and for per-group wording. Open-weights model; no zero-data-retention variant was used for coding.
+- **Muse Spark Open** — `meta-models/muse-spark-open-1026` via Baseten (chat + vision) for the agent planner and for per-group wording. Open-weights model.
+- **Muse Voice Transcribe** — `muse-voice-transcribe-1.0` on the Meta Model API (WAV mono 24 kHz) for hands-free use — speak the request with gloves on in a biosafety cabinet; the transcript fills the request box for editing.
 
 No other models are called at runtime.
 
