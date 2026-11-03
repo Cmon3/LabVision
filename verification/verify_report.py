@@ -10,12 +10,13 @@ import re
 # Benchmarked prompts (from config/bench/RESULTS.md)
 BENCHMARKED_PROMPTS = {"round spot", "colonies", "cell"}
 
-# Blocklist: organism-like names + diagnosis (out of scope)
+# Blocklist: real organism names only + diagnosis (no generic species/organism words)
 ORGANISM_BLOCKLIST = [
     "escherichia", "staphylococcus", "streptococcus", "bacillus",
     "pseudomonas", "salmonella", "klebsiella", "enterococcus",
     "proteus", "citrobacter", "serratia", "micrococcus",
-    "candida", "aspergillus", "organism", "species",
+    "candida", "aspergillus", "clostridium", "listeria",
+    "shigella", "campylobacter", "vibrio", "helicobacter",
 ]
 FORBIDDEN_WORDS = ["diagnosis", "diagnose"]
 
@@ -100,38 +101,20 @@ def run_verification(ctx: dict, report: dict) -> dict:
         for n in nums:
             allowed_numbers.add(n)
 
-    # check summary numbers — allow countable phrasing 30/300 and plate 90 as non-measured (they are policy, not LLM invention)
+    # check ALL numbers — only measured values, filter threshold, and policy constants 30/300/90 are allowed
     ALLOWED_NON_MEASURED = {"30", "300", "90", "90.0", "90.00"}
     for num in _numbers_in_text(summary):
         if num in ALLOWED_NON_MEASURED:
             continue
-        # skip years? not needed
         if num not in allowed_numbers:
-            # allow small numbers like 2-3 sentences? be lenient: allow numbers that are derived from count-related wording
-            # but strict per spec: every number must be verifiable via measure
-            # ponytail: allow 0-10 as generic small numbers if not ambiguous? no, be strict
-            # except: allow numbers inside "90 mm" plate note is not in summary — but summary should not contain plate numbers
-            # We'll flag only if numeric token is >10 or matches count-like
-            try:
-                if int(float(num)) > 10 or int(float(num)) == count:
-                    problems.append(f"number {num} in summary not found in measured results (no number may come from the LLM)")
-                    break  # one is enough to fail
-            except Exception:
-                problems.append(f"number {num} in summary not found in measured results")
-                break
-
-    # also scan notes for numbers
+            problems.append(f"number {num} in summary not found in measured results (no number may come from the LLM)")
+            break
     for num in _numbers_in_text(notes):
         if num in ALLOWED_NON_MEASURED:
             continue
         if num not in allowed_numbers:
-            try:
-                if int(float(num)) > 10:
-                    problems.append(f"number {num} in notes not found in measured results")
-                    break
-            except Exception:
-                problems.append(f"number {num} in notes not found in measured results")
-                break
+            problems.append(f"number {num} in notes not found in measured results")
+            break
 
     # 3. QC passed or escalated for re-photo
     is_blurry = bool(qc.get("is_blurry"))

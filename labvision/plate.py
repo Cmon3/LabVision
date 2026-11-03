@@ -5,8 +5,8 @@ import numpy as np
 from PIL import Image
 
 
-def detect_plate_diameter_px(image: np.ndarray | bytes) -> float | None:
-    """Find largest circular plate via HoughCircles. Returns diameter in px or None."""
+def detect_plate(image: np.ndarray | bytes) -> tuple[float, float, float] | None:
+    """Find largest circular plate via HoughCircles. Returns (diameter_px, cx, cy) or None."""
     try:
         import cv2
 
@@ -28,9 +28,18 @@ def detect_plate_diameter_px(image: np.ndarray | bytes) -> float | None:
             return None
         circles = np.uint16(np.around(circles))
         _x, _y, r = max(circles[0, :], key=lambda c: c[2])
-        return float(r * 2)
+        return (float(r * 2), float(_x), float(_y))
     except Exception:
         return None
+
+
+def detect_plate_diameter_px(image: np.ndarray | bytes) -> float | None:
+    """Find largest circular plate via HoughCircles. Returns diameter in px or None."""
+    res = detect_plate(image)
+    if res is None:
+        return None
+    d, _, _ = res
+    return d
 
 
 def crop_to_plate(image_bytes: bytes, pad: float = 0.02) -> bytes | None:

@@ -9,12 +9,14 @@ from labvision.config import AGAR_PROMPT
 
 def _make_fake_seg(n=2):
     fake = MagicMock()
-    fake.boxes = [MagicMock(x1=0, y1=0, x2=10, y2=10) for _ in range(n)]
-    for b in fake.boxes:
-        b.x1, b.y1, b.x2, b.y2 = 0, 0, 10, 10
-    fake.width = 100
-    fake.height = 100
-    fake_masks = np.zeros((n, 100, 100), dtype=bool)
+    fake.boxes = [MagicMock(x1=i*10, y1=i*10, x2=i*10+10, y2=i*10+10) for i in range(n)]
+    for i, b in enumerate(fake.boxes):
+        b.x1, b.y1, b.x2, b.y2 = i*10, i*10, i*10+10, i*10+10
+        b.c = 0.9
+    fake.width = 500
+    fake.height = 500
+    fake.confidences = [0.9]*n
+    fake_masks = np.zeros((n, 500, 500), dtype=bool)
     for i in range(n):
         fake_masks[i, i * 10 : i * 10 + 5, i * 10 : i * 10 + 5] = True
     fake.decoded_masks = lambda: fake_masks
@@ -99,19 +101,17 @@ def test_measure_uses_plate_py_not_model_param(tmp_path):
     fake_muse_plate.n = 0
     with patch.object(ag, "_call_muse", side_effect=fake_muse_plate):
         with patch.object(ag, "segment", return_value=fake_seg):
-            with patch("labvision.plate.detect_plate_diameter_px", return_value=200.0):
-                out = ag.run_agent(p, "count larger than 1 mm", use_cache=False)
-    # should have diameter_mm computed from 200px plate, not 999
+            with patch("labvision.plate.detect_plate", return_value=(80.0, 5, 5)):
+                with patch("labvision.plate.detect_plate_diameter_px", return_value=80.0):
+                    out = ag.run_agent(p, "count larger than 1 mm", use_cache=False)
+    # should have diameter_mm computed from 80px plate, not 999
     assert out["rows"], "no rows"
     assert "diameter_mm" in out["rows"][0], "plate detected but no diameter_mm"
-    # diameter_mm = diameter_px * (90/200)
-    # verify not using 999
+    # diameter_mm = diameter_px * (90/80)
     from labvision.measure import equivalent_diameter_px, mask_area_px
 
     dpx = equivalent_diameter_px(mask_area_px(np.zeros((100, 100), dtype=bool)))
-    # our fake mask area is 25
-    expected_scale = 90.0 / 200.0
-    # check scale used was 200 not 999
+    expected_scale = 90.0 / 80.0
     row = out["rows"][0]
     assert abs(row["diameter_mm"] - row["diameter_px"] * expected_scale) < 1e-6
 

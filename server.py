@@ -232,17 +232,46 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         raise HTTPException(status_code=502, detail={"error": "SAM segmentation failed", "hint": str(e)[:300]})
 
     t = time.time()
+    # --- Sanity guards 1,2,4: plate + dedup + outside ---
     try:
-        from labvision.plate import detect_plate_diameter_px
-        pdiam = detect_plate_diameter_px(arr)
+        from labvision.plate import detect_plate
+        from labvision.sanity import apply_box_guards
+        plate_info = detect_plate(arr)
+        if plate_info is None:
+            try:
+                from labvision.plate import detect_plate_diameter_px as _pd2
+                _d2 = _pd2(arr)
+                if _d2 is not None:
+                    plate_info = (_d2, w/2, h/2)
+            except Exception:
+                pass
     except Exception:
-        pdiam = None
+        plate_info = None
+    # apply guards (dedup, plate plausibility, outside plate)
+    try:
+        from labvision.sanity import apply_box_guards as _abg
+        guard_res = _abg(seg.boxes, masks, seg.confidences, plate_info, w, h)
+        seg.boxes = guard_res["boxes"]
+        seg.confidences = guard_res["confidences"]
+        masks = guard_res["masks"]
+        pdiam = guard_res["plate_diameter_px"]
+        for _ge in guard_res["trace"]:
+            _trace(_ge["name"], _ge["status"], **{k: v for k, v in _ge.items() if k not in ("name", "status")})
+        mm_per_px = 90.0 / pdiam if pdiam else None
+    except Exception as _e:
+        # fallback: old path
+        try:
+            from labvision.plate import detect_plate_diameter_px
+            pdiam = detect_plate_diameter_px(arr)
+        except Exception:
+            pdiam = None
+        mm_per_px = 90.0 / pdiam if pdiam else None
+        guard_res = {"stats": {}, "plate_plausible": bool(pdiam), "plate_diameter_px": pdiam}
+    # measure
     if pdiam:
         rows = measure_mod.measure_masks(masks, plate_diameter_px=pdiam, plate_diameter_mm=90.0)
-        mm_per_px = 90.0 / pdiam
     else:
         rows = measure_mod.measure_masks(masks)
-        mm_per_px = None
     import re
     m = re.search(r"larger than\s+([\d.]+)\s*mm", request, re.I)
     if m and rows and "diameter_mm" in rows[0]:
@@ -251,6 +280,15 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         except Exception:
             pass
     _trace("measure", "ok", plate_diameter_px=pdiam, mm_per_px=round(mm_per_px, 4) if mm_per_px else None, count=len(rows), duration_ms=int((time.time()-t)*1000))
+    # Guard 3: colony size plausibility 0.1-15 mm -> flag, not dropped
+    _implausible = []
+    try:
+        from labvision.sanity import flag_implausible_sizes
+        _implausible = flag_implausible_sizes(rows)
+        if _implausible:
+            _trace("size_check", "warn", decided_by="rule", implausible_count=len(_implausible), indices=_implausible, reason="diameter outside 0.1-15 mm", action="flagged not dropped")
+    except Exception:
+        pass
 
     count = len(rows)
     status = _status_for({"is_blurry": is_blurry, "glare": glare}, count)
@@ -285,6 +323,20 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     else:
         mean_d = mean_mm = 0
     report = f"Count: {count_label}\nMean diameter: {mean_d:.1f}px" + (f" ({mean_mm:.2f}mm)" if has_mm else "") + f"\n{count} objects — {'no plate, sizes in px' if not pdiam else 'plate 90mm'}"
+    # Guard reporting in report (rule-based, not LLM)
+    try:
+        _od = guard_res.get("stats", {}).get("outside_plate_discarded", 0)
+        _dup = guard_res.get("stats", {}).get("duplicates_removed", 0)
+        if _od:
+            report += f"\nNote: {_od} detections outside plate discarded (centre outside circle)."
+        if _dup:
+            report += f"\nNote: {_dup} duplicate detections merged (IoU>0.7)."
+        if not guard_res.get("plate_plausible", True):
+            report += "\nNote: plate not found (diameter outside 40-98% of image side) — sizes in px only."
+        if _implausible:
+            report += f"\nNote: {len(_implausible)} colonies flagged implausible size (diameter outside 0.1-15 mm)."
+    except Exception:
+        pass
     if experimental:
         report += "\nExperimental — not benchmarked (colour filter)."
     if "countable" in lower_req:
@@ -313,7 +365,18 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     colony_types = _colony_types_from_request(arr, seg.boxes, masks, request)
 
     try:
-        save_run(_get_runs_dir(), run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam, "experimental": experimental, "status": status, "count": count, "is_blurry": is_blurry, "glare": glare, "retry": retry, "mean_confidence": mean_c, "low_confidence": low_conf}, results=rows)
+        _guard_params = {}
+        try:
+            _guard_params.update({
+                "outside_plate_discarded": guard_res.get("stats", {}).get("outside_plate_discarded", 0),
+                "duplicates_removed": guard_res.get("stats", {}).get("duplicates_removed", 0),
+                "plate_plausible": guard_res.get("plate_plausible", bool(pdiam)),
+                "plate_not_found": not guard_res.get("plate_plausible", bool(pdiam)),
+                "implausible_size_count": len(_implausible) if isinstance(_implausible, list) else 0,
+            })
+        except Exception:
+            pass
+        save_run(_get_runs_dir(), run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam, "experimental": experimental, "status": status, "count": count, "is_blurry": is_blurry, "glare": glare, "retry": retry, "mean_confidence": mean_c, "low_confidence": low_conf, **_guard_params}, results=rows)
     except Exception:
         pass
     # persist trace with decided_by for queue/audit (inbox = rule-only)

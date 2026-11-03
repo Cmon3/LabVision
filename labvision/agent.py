@@ -317,6 +317,9 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
     plate_diameter_px: float | None = None
     plate_detected: bool = False
     experimental: bool = False
+    # sanity guard stats
+    _guard_stats: dict = {"outside_plate_discarded": 0, "duplicates_removed": 0, "plate_plausible": True, "plate_not_found": False, "implausible_size_count": 0}
+    _guard_plate_info: tuple | None = None
     submit_status: str | None = None  # tracks if we escalated
     last_report: dict | None = None
     # colour words for experimental detection
@@ -432,25 +435,53 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
                 else:
                     _emit({"type": "step", "step": "measure", "status": "running", "message": f"Measuring {len(seg_result.boxes)} colonies…", "values": {}, "decided_by": "rule"})
                     masks = seg_result.decoded_masks()
-                    # plate diameter from Python, never from model
+                    # plate diameter from Python, never from model — with sanity guards 1,2,4
                     _emit({"type": "step", "step": "plate", "status": "running", "message": "Detecting plate…", "values": {}, "decided_by": "rule"})
                     try:
-                        from labvision.plate import detect_plate_diameter_px as _plate_px
-
-                        _plate_px_val = _plate_px(img_arr)
-                    except Exception:
-                        _plate_px_val = None
+                        from labvision.plate import detect_plate as _plate_det
+                        from labvision.sanity import apply_box_guards as _abg
+                        _plate_info_raw = _plate_det(img_arr)
+                        _img_h, _img_w = img_arr.shape[0], img_arr.shape[1]
+                        if _plate_info_raw is None:
+                            # fallback for tests that mock diameter-only
+                            try:
+                                from labvision.plate import detect_plate_diameter_px as _pd2
+                                _d2 = _pd2(img_arr)
+                                if _d2 is not None:
+                                    _plate_info_raw = (_d2, _img_w/2, _img_h/2)
+                            except Exception:
+                                pass
+                        _guard_res = _abg(seg_result.boxes, masks, seg_result.confidences, _plate_info_raw, _img_w, _img_h)
+                        # apply filtered
+                        seg_result.boxes = _guard_res["boxes"]
+                        seg_result.confidences = _guard_res["confidences"]
+                        masks = _guard_res["masks"]
+                        _plate_px_val = _guard_res["plate_diameter_px"]
+                        _guard_stats.update(_guard_res["stats"])
+                        _guard_stats["plate_plausible"] = _guard_res["plate_plausible"]
+                        _guard_stats["plate_not_found"] = not _guard_res["plate_plausible"]
+                        _guard_plate_info = _plate_info_raw
+                        for _ge in _guard_res["trace"]:
+                            _emit({"type": "step", "step": _ge["name"], "status": _ge["status"], "message": f"{_ge['name']}: {_ge.get('discarded', _ge.get('removed', ''))} { _ge.get('reason','')}", "values": {k: v for k, v in _ge.items() if k not in ("name", "status")}, "decided_by": "rule"})
+                    except Exception as _e:
+                        try:
+                            from labvision.plate import detect_plate_diameter_px as _plate_px
+                            _plate_px_val = _plate_px(img_arr)
+                        except Exception:
+                            _plate_px_val = None
+                        _guard_stats["plate_not_found"] = _plate_px_val is None
                     if _plate_px_val:
                         rows = measure_mod.measure_masks(masks, plate_diameter_px=_plate_px_val, plate_diameter_mm=90.0)
-                        _plate_info = {"plate_detected": True, "plate_diameter_px": _plate_px_val}
+                        _plate_info = {"plate_detected": True, "plate_diameter_px": _plate_px_val, **_guard_stats}
                         plate_diameter_px = _plate_px_val
                         plate_detected = True
                         _emit({"type": "step", "step": "plate", "status": "ok", "message": f"Plate detected: {_plate_px_val:.0f} px = 90 mm ({90.0/_plate_px_val:.4f} mm/px)", "values": {"plate_diameter_px": _plate_px_val, "mm_per_px": round(90.0 / _plate_px_val, 4)}, "decided_by": "rule"})
                     else:
                         rows = measure_mod.measure_masks(masks)
-                        _plate_info = {"plate_detected": False}
+                        _plate_info = {"plate_detected": False, **_guard_stats}
                         plate_detected = False
-                        _emit({"type": "step", "step": "plate", "status": "warn", "message": "No plate detected — sizes in px", "values": {"plate_diameter_px": None}, "decided_by": "rule"})
+                        reason = _guard_stats.get("plate_not_found") and "plate not found (diameter outside 40-98% of image side)" or "No plate detected"
+                        _emit({"type": "step", "step": "plate", "status": "warn", "message": f"{reason} — sizes in px", "values": {"plate_diameter_px": None, "reason": reason}, "decided_by": "rule"})
                     if "min_diameter_mm" in args:
                         if rows and "diameter_mm" in rows[0]:
                             rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
@@ -460,7 +491,16 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
                             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result)})
                             continue
                     measure_rows = rows
-                    result = {"count": len(rows), "rows": rows[:5], **_plate_info}
+                    # Guard 3: colony size plausibility
+                    try:
+                        from labvision.sanity import flag_implausible_sizes
+                        _bad = flag_implausible_sizes(measure_rows)
+                        _guard_stats["implausible_size_count"] = len(_bad)
+                        if _bad:
+                            _emit({"type": "step", "step": "size_check", "status": "warn", "message": f"Implausible size: {len(_bad)} colonies outside 0.1-15 mm", "values": {"implausible_count": len(_bad), "indices": _bad, "reason": "diameter outside 0.1-15 mm"}, "decided_by": "rule"})
+                    except Exception:
+                        pass
+                    result = {"count": len(rows), "rows": rows[:5], **_plate_info, "implausible_size_count": _guard_stats.get("implausible_size_count", 0)}
                     _emit({"type": "step", "step": "measure", "status": "ok", "message": f"Measuring {len(rows)} colonies… done", "values": {"count": len(rows)}, "decided_by": "rule"})
             elif fname == "ask_rephoto":
                 rephoto_reason = args.get("reason", "")
@@ -708,6 +748,20 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
         rephoto_line=rephoto_line,
         char_section=char_section,
     )
+    # Guard notes in report
+    try:
+        _od = _guard_stats.get("outside_plate_discarded", 0)
+        _dup = _guard_stats.get("duplicates_removed", 0)
+        if _od:
+            report += f"\nNote: {_od} detections outside plate discarded (centre outside circle)."
+        if _dup:
+            report += f"\nNote: {_dup} duplicate detections merged (IoU>0.7)."
+        if _guard_stats.get("plate_not_found"):
+            report += "\nNote: plate not found (diameter outside 40-98% of image side) — sizes in px only."
+        if _guard_stats.get("implausible_size_count"):
+            report += f"\nNote: {_guard_stats['implausible_size_count']} colonies flagged implausible size (diameter outside 0.1-15 mm)."
+    except Exception:
+        pass
     if experimental:
         report += "\nExperimental — not benchmarked (colour filter)."
     if "countable" in request.lower():

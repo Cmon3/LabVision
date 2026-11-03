@@ -187,6 +187,15 @@ def get_queue_items(runs_dir: Path | None = None) -> list[dict]:
             reasons.append("retry")
         if low_conf:
             reasons.append(f"low conf {mean_conf:.2f}" if mean_conf is not None else "low confidence")
+        # sanity guards
+        if rec.get("params", {}).get("plate_not_found") or any(t.get("name") == "plate_check" and "plate not found" in str(t.get("reason", "")) for t in trace):
+            reasons.append("plate not found")
+        if rec.get("params", {}).get("outside_plate_discarded", 0) > 0 or any(t.get("name") == "plate_filter" and t.get("discarded", 0) > 0 for t in trace):
+            reasons.append("outside plate")
+        if rec.get("params", {}).get("duplicates_removed", 0) > 0 or any(t.get("name") == "dedup" and t.get("removed", 0) > 0 for t in trace):
+            reasons.append("duplicate")
+        if rec.get("params", {}).get("implausible_size_count", 0) > 0 or any(t.get("name") == "size_check" for t in trace):
+            reasons.append("implausible size")
 
         needs_review = len(reasons) > 0
 
