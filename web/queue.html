@@ -8,6 +8,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/web/app.css">
 <style>
+.topbar{background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar-inner{max-width:1360px;margin:0 auto;padding:14px 28px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+.nav{display:flex;gap:6px;font-size:15px}
+.nav a{color:var(--ink);text-decoration:none;padding:8px 14px;border-radius:8px}
+.nav a.active{background:var(--ink);color:var(--bg);font-weight:600}
+.nav-badge{background:var(--accent-soft);color:var(--accent-soft-text);font-family:"JetBrains Mono",monospace;font-size:13px;padding:1px 7px;border-radius:999px}
 .queue-main{max-width:1360px;margin:0 auto;padding:28px;display:flex;flex-direction:column;gap:20px}
 .summary-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
 .summary-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
