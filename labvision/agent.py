@@ -237,7 +237,7 @@ def _call_muse(messages: list[dict], tools=TOOLS, use_cache: bool = True) -> dic
     if not key:
         raise RuntimeError("Set BASETEN_API_KEY")
     url = f"{BASETEN_URL.rstrip('/')}/chat/completions"
-    body = {"model": BASETEN_MODEL, "messages": messages, "tools": tools, "tool_choice": "auto"}
+    body = {"model": BASETEN_MODEL, "messages": messages, "tools": tools, "tool_choice": "auto", "parallel_tool_calls": False}
     # cache
     cpath = CACHE_DIR / _cache_key(messages, tools, BASETEN_MODEL)
     if use_cache and cpath.exists():
@@ -338,24 +338,40 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
         choice = resp["choices"][0]["message"]
         tool_calls = choice.get("tool_calls") or []
         if not tool_calls:
-            # backward compat: plain text is final (tests), but we log it as warn for hygiene
-            assistant_note = choice.get("content") or "Analysis complete."
-            _emit({"type": "step", "step": "plain_text", "status": "warn", "message": "Plain text not accepted — treating as final", "values": {}, "decided_by": "rule"})
-            _emit({"type": "step", "step": "report", "status": "running", "message": "Writing report…", "values": {}, "decided_by": "model"})
-            break
-        # plan: what Muse actually requested
-        _emit({
-            "type": "step",
-            "step": "plan",
-            "status": "ok",
-            "message": f"Planning: Muse Spark Open chose {' → '.join(tc['function']['name'] for tc in tool_calls)}",
-            "values": {"tool_calls": [{"name": tc["function"]["name"], "arguments": json.loads(tc["function"]["arguments"] or "{}")} for tc in tool_calls]},
-            "decided_by": "model",
-        })
-        # execute tools — one tool per turn
-        messages.append(choice)
-        # enforce one tool per turn
-        tc = tool_calls[0]
+            # like reference: plain text is not accepted — bounce and continue
+            messages.append(choice)
+            messages.append({"role": "user", "content": "Plain text is not accepted. Call exactly one tool."})
+            _emit({"type": "step", "step": "plain_text", "status": "warn", "message": "Plain text is not accepted. Call exactly one tool.", "values": {}, "decided_by": "rule"})
+            _save("running", resp)
+            continue
+        # plan: what Muse actually requested — one tool per turn
+        if len(tool_calls) > 1:
+            _emit({
+                "type": "step",
+                "step": "plan",
+                "status": "ok",
+                "message": f"Planning: Muse Spark Open chose {tool_calls[0]['function']['name']} (1 of {len(tool_calls)} kept, one tool per turn)",
+                "values": {"tool_calls": [{"name": tool_calls[0]["function"]["name"], "arguments": json.loads(tool_calls[0]["function"]["arguments"] or "{}")}], "dropped": len(tool_calls) - 1},
+                "decided_by": "model",
+            })
+        else:
+            _emit({
+                "type": "step",
+                "step": "plan",
+                "status": "ok",
+                "message": f"Planning: Muse Spark Open chose {' → '.join(tc['function']['name'] for tc in tool_calls)}",
+                "values": {"tool_calls": [{"name": tc["function"]["name"], "arguments": json.loads(tc["function"]["arguments"] or "{}")} for tc in tool_calls]},
+                "decided_by": "model",
+            })
+        # execute tools — one tool per turn: keep only first in the assistant message you append
+        if len(tool_calls) > 1:
+            filtered_choice = dict(choice)
+            filtered_choice["tool_calls"] = [tool_calls[0]]
+            messages.append(filtered_choice)
+            tc = tool_calls[0]
+        else:
+            messages.append(choice)
+            tc = tool_calls[0]
         fname = tc["function"]["name"]
         args = json.loads(tc["function"]["arguments"] or "{}")
         try:

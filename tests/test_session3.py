@@ -29,12 +29,13 @@ def test_default_segment_prompt_is_agar_prompt(tmp_path):
     from PIL import Image
 
     p = tmp_path / "img.png"
-    Image.new("RGB", (100, 100), "white").save(p)
+    arr = np.random.randint(0, 200, (100, 100, 3), dtype=np.uint8)
+    Image.fromarray(arr).save(p)
 
     captured = {}
 
     def fake_muse(messages, tools=None, use_cache=True):
-        # first call: check_quality, second: segment with empty args, third: measure, fourth: final
+        # first call: check_quality, second: segment with empty args, third: measure, fourth: submit_report
         n = getattr(fake_muse, "n", 0)
         fake_muse.n = n + 1
         if n == 0:
@@ -43,7 +44,7 @@ def test_default_segment_prompt_is_agar_prompt(tmp_path):
             return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "2", "function": {"name": "segment", "arguments": "{}"}}]}}]}
         if n == 2:
             return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "3", "function": {"name": "measure", "arguments": "{}"}}]}}]}
-        return {"choices": [{"message": {"role": "assistant", "content": "done"}}]}
+        return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "4", "function": {"name": "submit_report", "arguments": json.dumps({"summary": "Count 1 too few (<30, low statistical reliability)", "count": 1, "filters": "", "notes": ""})}}]}}]}
 
     fake_seg, _ = _make_fake_seg(1)
 
@@ -77,7 +78,8 @@ def test_measure_uses_plate_py_not_model_param(tmp_path):
     from PIL import Image
 
     p = tmp_path / "img.png"
-    Image.new("RGB", (100, 100), "white").save(p)
+    arr = np.random.randint(0, 200, (100, 100, 3), dtype=np.uint8)
+    Image.fromarray(arr).save(p)
 
     fake_seg, _ = _make_fake_seg(1)
 
@@ -92,7 +94,7 @@ def test_measure_uses_plate_py_not_model_param(tmp_path):
         if n == 2:
             # model tries to inject plate_diameter_px=999 (should be ignored)
             return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "3", "function": {"name": "measure", "arguments": json.dumps({"plate_diameter_px": 999, "min_diameter_mm": 1})}}]}}]}
-        return {"choices": [{"message": {"role": "assistant", "content": "done"}}]}
+        return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "4", "function": {"name": "submit_report", "arguments": json.dumps({"summary": "Count 1 too few (<30, low statistical reliability)", "count": 1, "filters": "", "notes": ""})}}]}}]}
 
     fake_muse_plate.n = 0
     with patch.object(ag, "_call_muse", side_effect=fake_muse_plate):
@@ -128,7 +130,8 @@ def test_characterize_batches_all_colonies(tmp_path):
     from PIL import Image
 
     p = tmp_path / "img.png"
-    Image.new("RGB", (200, 200), "white").save(p)
+    arr = np.random.randint(0, 200, (200, 200, 3), dtype=np.uint8)
+    Image.fromarray(arr).save(p)
 
     fake_seg, _ = _make_fake_seg(30)
 
@@ -158,7 +161,7 @@ def test_characterize_batches_all_colonies(tmp_path):
             return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "3", "function": {"name": "measure", "arguments": "{}"}}]}}]}
         if n == 3:
             return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "4", "function": {"name": "characterize", "arguments": "{}"}}]}}]}
-        return {"choices": [{"message": {"role": "assistant", "content": "done"}}]}
+        return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": "5", "function": {"name": "submit_report", "arguments": json.dumps({"summary": "Count 30 countable", "count": 30, "filters": "", "notes": ""})}}]}}]}
 
     fake_muse_all.n = 0
     with patch.object(ag, "_call_muse", side_effect=fake_muse_all):
