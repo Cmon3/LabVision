@@ -289,8 +289,10 @@ async function doAnalyze(){
       data=await r.json();
     }
     lastResult=data;
-    renderResult(data);
+    try{ renderResult(data); }catch(err){ console.error("renderResult failed", err); }
     showState("result");
+    // ensure right column visible even if render threw or count 0
+    document.getElementById("resultState").hidden=false;
     setLeftStatus("");
   }catch(e){
     const msg=e.message||String(e);
