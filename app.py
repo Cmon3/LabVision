@@ -362,7 +362,7 @@ with gr.Blocks(title="LabVision Copilot") as demo:
 
     state = gr.State(value={})
 
-    gr.Markdown("Research/QC quantification. Not a medical device.")
+    gr.Markdown("For research and quality-control labs.")
     gr.Markdown("Numbers from Python (`measure.py` + plate detection). Muse Spark Open via Baseten writes interpretation only.")
 
     def voice_to_text(audio):
