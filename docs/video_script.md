@@ -39,6 +39,10 @@ This is a verifiable agent: it shows its work and tells you what it can't do."
 [Screen: inbox folder → queue filling live, 3 s refresh]
 "And it scales. With a phone on a stand or an incubator's camera, photos land in the inbox. The agent runs the fixed pipeline — no prompt guessing. Only flagged plates need a human: Re-photo for blur, TNTC for dense, Empty, or low confidence. You approve with your name, and the audit log goes straight to the LIMS as CSV."
 
+## 2:45–2:55 · Verification in action
+[Screen: queue showing "Report refused: count does not match" then "Awaiting sign-off" and inbox re-photo auto-resume]
+"Verification is code, not the model. If the report invents a number or the photo is blurry, it's refused — three tries and it escalates for guidance. A blurry plate jumps to Re-photo, and when you re-shoot the same QR code into the inbox, it auto-resumes. Every turn is saved, so you can replay what the model did."
+
 ## 2:50–3:00 · Close
 "SAM 3.1 on the Meta Model API, Muse Spark Open on Baseten, fully open source.
 LabVision Copilot: from plate photo to a count you can audit, in seconds."

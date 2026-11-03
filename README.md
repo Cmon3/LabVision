@@ -63,6 +63,20 @@ flowchart LR
 
 > **Verifiable agent:** every number in a report comes from deterministic Python. The model writes only the short interpretation. “Numbers come from Python, never from the model.”
 
+## Verification layer
+
+Agent must finish with `submit_report {summary, count, filters, notes}`. Code checks (not the model) every turn:
+
+| Check | Fail → |
+|---|---|
+| `count` equals `measure` count (same filters); every number in `summary` is in measured results | refused, feedback |
+| QC blur/glare → must be escalated `needs_rephoto` | refused |
+| Count <30 → must say “too few”, >300 → “TNTC” | refused |
+| Prompt is `round spot`/`colonies`/`cell` or report marked `experimental` | refused |
+| No organism names, no `diagnosis`/`diagnose` | refused |
+
+3 refusals → `report_refused` escalation (reviewer guidance). Pass → `awaiting_signoff` (approve/reject). QC fail → `needs_rephoto` (new photo with same QR/plate_id in `./inbox` auto-resumes). Loop: one tool/turn, turn limit 8, `paused` on API error, progress saved every turn in `runs/<id>/progress.json`, system instructions in `labvision/system_instructions.md`. See [VERIFICATION.md](VERIFICATION.md) + [ESCALATION_RULES.md](ESCALATION_RULES.md). Tests use scripted fake model (`tests/fake_model.py`) with recorded SAM outputs — `86 passed`.
+
 ## Results
 
 Held-out evaluation (dev/test split by image name, so test plates were never used for tuning).
