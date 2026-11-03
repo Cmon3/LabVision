@@ -30,8 +30,12 @@
 .chip-row .sug-chip{font:400 14px "Source Sans 3",sans-serif;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 .chip-row .sug-chip.experimental{border:1px dashed var(--accent);background:var(--surface);color:var(--accent-soft-text)}
 .run-btn{font:600 17px "Source Sans 3",sans-serif;padding:14px;border-radius:10px;border:none;background:var(--ink);color:var(--bg)}
-.verified-grid{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:4px 10px;align-items:start;font-size:14px}
+.verified-grid{display:flex;flex-direction:column;gap:10px;list-style:none;padding:0;margin:0}
+.verified-grid li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:4px 10px;align-items:start;font-size:14px}
 .verified-grid .icon{font-weight:700}
+.verified-grid .tl-body{min-width:0;overflow-wrap:break-word}
+.verified-grid .tl-name{font-weight:600;overflow-wrap:break-word;min-width:0}
+.verified-grid .tl-kv{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted-2);overflow-wrap:break-word;min-width:0}
 .result-header{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 24px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between}
 .big-count{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:72px;line-height:1}
 .viewer-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
