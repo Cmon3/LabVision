@@ -9,6 +9,9 @@ from pathlib import Path
 
 RUNS_DIR = Path("runs")
 EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
+# 2 s stability for large copies (camera simulator uses temp+rename)
+STABILITY_S = 2.0
+_file_state: dict[str, tuple[int, float, float]] = {}  # path -> (size, mtime, first_seen_mono)
 
 def read_plate_id(image_path: Path) -> str:
     """QR code if present, else file stem."""
@@ -105,18 +108,50 @@ def process_one(inbox_dir: Path, image_path: Path) -> dict:
             pass
         raise
 
-def process_inbox_once(inbox_dir: str | Path) -> list[dict]:
+def _is_stable(path: Path, stability_s: float | None = None, now_mono: float | None = None) -> bool:
+    thr = STABILITY_S if stability_s is None else stability_s
+    if thr <= 0:
+        return True
+    try:
+        st = path.stat()
+        size, mtime = st.st_size, st.st_mtime
+    except Exception:
+        return False
+    key = str(path.resolve())
+    now_mono = now_mono if now_mono is not None else time.monotonic()
+    prev = _file_state.get(key)
+    if prev is None or prev[0] != size or prev[1] != mtime:
+        _file_state[key] = (size, mtime, now_mono)
+        return False
+    _, _, first_seen = prev
+    if now_mono - first_seen >= thr:
+        # ready — clear state so next poll after move doesn't linger
+        _file_state.pop(key, None)
+        return True
+    return False
+
+def process_inbox_once(inbox_dir: str | Path, stability_s: float | None = None) -> list[dict]:
     inbox_dir = Path(inbox_dir)
     inbox_dir.mkdir(parents=True, exist_ok=True)
     (inbox_dir / "processed").mkdir(exist_ok=True)
     (inbox_dir / "failed").mkdir(exist_ok=True)
+    thr = STABILITY_S if stability_s is None else stability_s
     out = []
+    # cleanup state for disappeared files
+    try:
+        existing = {str((inbox_dir / p.name).resolve()) for p in inbox_dir.iterdir() if p.is_file()}
+        for k in list(_file_state.keys()):
+            if k not in existing:
+                _file_state.pop(k, None)
+    except Exception:
+        pass
     for p in inbox_dir.iterdir():
-        if not p.is_file():
+        if not p.is_file() or p.name.startswith("."):
             continue
         if p.suffix.lower() not in EXTS:
             continue
-        # skip files still being written — quick size check if needed (ponytail: skip, copy is atomic)
+        if not _is_stable(p, stability_s=thr):
+            continue
         try:
             res = process_one(inbox_dir, p)
             out.append(res)

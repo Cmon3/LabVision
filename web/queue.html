@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LabVision — Review queue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/app.css">
+<style>
+.queue-wrap{max-width:1200px;margin:0 auto;padding:20px}
+.queue-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.filters .btn.is-active{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.reason-chip{font:600 .68rem "JetBrains Mono",monospace;padding:3px 7px;border-radius:999px;border:1px solid var(--line);letter-spacing:.02em}
+.reason-chip.blurry,.reason-chip.glare,.reason-chip.empty{background:color-mix(in srgb, var(--fail) 12%, var(--surface));color:var(--fail);border-color:color-mix(in srgb, var(--fail) 30%, transparent)}
+.reason-chip.TNTC,.reason-chip.alert{background:color-mix(in srgb, var(--warn) 14%, var(--surface));color:var(--warn);border-color:color-mix(in srgb, var(--warn) 30%, transparent)}
+.reason-chip.experimental,.reason-chip.retry,.reason-chip.low{background:color-mix(in srgb, var(--accent) 14%, var(--surface));color:var(--accent);border-color:color-mix(in srgb, var(--accent) 30%, transparent)}
+.reviewer-input{font:400 .88rem "Source Sans 3",sans-serif;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.queue-table tbody tr{cursor:pointer}
+.queue-table tbody tr.needs-review{background:color-mix(in srgb, var(--warn) 6%, var(--surface))}
+.queue-table tbody tr.approved{opacity:.6}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="hdr-inner">
+    <div class="hdr-title">
+      <h1>LabVision Copilot — Review queue</h1>
+      <p class="hdr-sub">Review by exception — only flagged plates need a human</p>
+    </div>
+    <nav class="chips" aria-label="nav">
+      <a class="chip" href="/">Landing</a>
+      <a class="chip" href="/app">Dashboard</a>
+      <span class="chip" style="background:var(--ink);color:var(--bg);border-color:var(--ink)">Queue</span>
+    </nav>
+  </div>
+</header>
+
+<main class="queue-wrap">
+  <div class="queue-head">
+    <div class="filters" role="tablist">
+      <button class="btn btn-sm is-active" data-filter="all">All</button>
+      <button class="btn btn-sm" data-filter="needs">Needs review</button>
+      <button class="btn btn-sm" data-filter="approved">Approved</button>
+    </div>
+    <div class="row gap">
+      <label class="small muted" for="reviewerName">Reviewer</label>
+      <input id="reviewerName" class="reviewer-input" placeholder="Your name" style="width:160px">
+      <button id="approveCleanBtn" class="btn btn-sm" title="Approve all clean plates (no review reasons)">Approve all clean plates</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table class="queue-table">
+        <thead><tr><th>Plate ID</th><th>Time</th><th>Location</th><th>Count</th><th>Status</th><th>Needs review</th><th>Reviewed by</th><th>Action</th></tr></thead>
+        <tbody id="queueBody"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="muted small" style="margin-top:8px">Auto-refresh every 3 s. Click a row to open detail (correct by click/box). Alert limits below are <em>example values only</em>.</p>
+  </div>
+</main>
+
+<footer class="ftr">
+  <span>For research and quality-control labs.</span>
+  <a href="https://github.com/anomalyco/labvision-copilot" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script>
+const reviewerInput=document.getElementById("reviewerName");
+reviewerInput.value=localStorage.getItem("labvision_reviewer")||"";
+reviewerInput.addEventListener("change",()=>localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()));
+reviewerInput.addEventListener("input",()=>localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()));
+
+let currentFilter="all";
+let lastData=[];
+document.querySelectorAll("[data-filter]").forEach(b=>{
+  b.addEventListener("click",()=>{
+    document.querySelectorAll("[data-filter]").forEach(x=>x.classList.remove("is-active"));
+    b.classList.add("is-active");
+    currentFilter=b.dataset.filter;
+    render(lastData);
+  });
+});
+
+function reasonChip(r){
+  const cls=r.includes("TNTC")||r.startsWith("alert")?"TNTC":r;
+  return `<span class="reason-chip ${cls}">${r}</span>`;
+}
+function fmtTime(iso){
+  if(!iso) return "—";
+  try{ const d=new Date(iso); return d.toLocaleString(); }catch(_){ return iso; }
+}
+function render(data){
+  lastData=data;
+  const tbody=document.getElementById("queueBody");
+  let filtered=data;
+  if(currentFilter==="needs") filtered=data.filter(d=>d.needs_review && !d.reviewed_by);
+  else if(currentFilter==="approved") filtered=data.filter(d=>d.reviewed_by);
+  else filtered=data;
+  if(!filtered.length){
+    tbody.innerHTML=`<tr><td colspan="8" class="muted">No plates — queue is empty</td></tr>`;
+    return;
+  }
+  tbody.innerHTML="";
+  for(const r of filtered){
+    const tr=document.createElement("tr");
+    tr.className=(r.reviewed_by?"approved":r.needs_review?"needs-review":"");
+    tr.innerHTML=`
+      <td class="mono">${r.plate_id||r.run_id}</td>
+      <td class="small">${fmtTime(r.time)}</td>
+      <td>${r.location||"—"}</td>
+      <td>${r.count}</td>
+      <td><span class="pill ${r.status||'ok'}">${r.status||'ok'}</span></td>
+      <td>${r.reasons && r.reasons.length ? r.reasons.map(reasonChip).join(" ") : '<span class="muted">—</span>'}</td>
+      <td>${r.reviewed_by ? `${r.reviewed_by}<br><span class="small muted">${fmtTime(r.reviewed_at)}</span>` : "—"}</td>
+      <td>${r.reviewed_by ? '<span class="small muted">approved</span>' : `<button class="btn btn-sm approve-btn" data-id="${r.run_id}">Approve</button>`}</td>
+    `;
+    tr.addEventListener("click",(e)=>{
+      if(e.target.closest(".approve-btn")) return;
+      window.location.href=`/app?run_id=${encodeURIComponent(r.run_id)}`;
+    });
+    const btn=tr.querySelector(".approve-btn");
+    if(btn){
+      btn.addEventListener("click", async (e)=>{
+        e.stopPropagation();
+        const reviewer=(reviewerInput.value||"").trim();
+        if(!reviewer){ reviewerInput.focus(); reviewerInput.placeholder="Enter name"; return; }
+        btn.disabled=true; btn.textContent="…";
+        try{
+          const res=await fetch(`/api/runs/${encodeURIComponent(r.run_id)}/approve`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reviewer})});
+          if(!res.ok) throw new Error(await res.text());
+          await fetchQueue();
+        }catch(err){ alert("Approve failed: "+err.message.slice(0,200)); btn.disabled=false; btn.textContent="Approve"; }
+      });
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+async function fetchQueue(){
+  try{
+    const r=await fetch("/api/queue");
+    if(!r.ok) throw new Error("queue fetch failed");
+    const data=await r.json();
+    render(data);
+  }catch(e){
+    document.getElementById("queueBody").innerHTML=`<tr><td colspan="8" class="muted">Queue unavailable: ${e.message}</td></tr>`;
+  }
+}
+document.getElementById("approveCleanBtn").addEventListener("click", async ()=>{
+  const reviewer=(reviewerInput.value||"").trim();
+  if(!reviewer){ reviewerInput.focus(); return; }
+  if(!confirm("Approve all clean plates (no review reasons)?")) return;
+  try{
+    const r=await fetch("/api/queue/approve_clean",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reviewer})});
+    if(!r.ok) throw new Error(await r.text());
+    await fetchQueue();
+  }catch(e){ alert("Failed: "+e.message.slice(0,200)); }
+});
+
+fetchQueue();
+setInterval(fetchQueue, 3000);
+</script>
+</body>
+</html>

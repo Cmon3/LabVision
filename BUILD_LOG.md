@@ -71,6 +71,7 @@ Summary (Oct 31 Session 4, measured features + honest grouping):
 | 2026-11-03 | S7 Step 4: README (landing + live screenshots, / and /app, 6-point check) | Screenshots landing.png/live.png, deploy section, manual check list; 71 tests. |
 | 2026-11-03 | Fix click-to-correct: prompt “<0f>1< |point;...|>” no-space, w/h=image, no fallback | Was “1< |point;...|>” (space, no <0f>) → 400 “invalid prompt: object 1 on frame 0 has no prompt token” then 200 empty; now point at 1442,1818 on 14684 → 188-char output_text + 0.76 fill, box at 1384,1760→192-char +0.78 fill; image.png now real PNG; manual mode + teal; 72 tests. |
 | 2026-11-03 | S8 Step 1: inbox ingest (poll 2s, QR plate ID, sidecar, processed/failed) | labvision/inbox.py poll ./inbox via QRCodeDetector→stem, sidecar {location,sample_type,alert_limit}, runs saved via server._analyze_image + plate_id enrichment; server --inbox thread + `python -m labvision.inbox ./inbox`; 77 tests. |
+| 2026-11-03 | S8 Step 2: queue (review-by-exception, approve, stability 2s, temp+rename) | GET /api/queue (plate_id/time/location/count/status/needs_review/reasons/reviewed_by, sorted needs_review first, coloured chips, filter all/needs/approved, click→/app?run_id= detail), POST /api/runs/{id}/approve + approve_clean (reviewer localStorage, audit HUMAN), live 3 s; inbox 2 s stability via size/mtime + dotfile skip, simulator temp+rename + blurred 518; trace decided_by rule for inbox; 80 tests. |
 
 ---
 Summary (Nov 3 Session 5, ship it):

@@ -170,6 +170,21 @@ async function loadExamples(){
 }
 loadExamples();
 
+// queue detail: ?run_id=xxx
+(async function tryLoadRunId(){
+  const rid=new URLSearchParams(location.search).get("run_id");
+  if(!rid) return;
+  try{
+    const r=await fetch(`/api/runs/${encodeURIComponent(rid)}`);
+    if(!r.ok) throw new Error("run not found");
+    const data=await r.json();
+    lastResult=data;
+    renderResult(data);
+    showState("result");
+    setLeftStatus(`Loaded ${data.plate_id||rid} from queue — you can correct by click/box`);
+  }catch(e){ /* keep empty state */ }
+})();
+
 const _liveMap = new Map();
 function clearLive(){
   _liveMap.clear();

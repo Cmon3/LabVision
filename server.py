@@ -43,6 +43,10 @@ if WEB_DIR.exists():
     def _app():
         return FileResponse(str(WEB_DIR / "index.html"), media_type="text/html")
 
+    @app.get("/app/queue")
+    def _queue():
+        return FileResponse(str(WEB_DIR / "queue.html"), media_type="text/html")
+
     @app.api_route("/api/examples/file", methods=["GET", "HEAD"])
     def _example_file(path: str):
         # only serve files inside data/
@@ -173,8 +177,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     w, h = pil.size
 
     trace = []
-    def _trace(name, status, **kv):
-        trace.append({"name": name, "status": status, **kv})
+    def _trace(name, status, decided_by="rule", **kv):
+        trace.append({"name": name, "status": status, "decided_by": decided_by, **kv})
 
     t = time.time()
     bv = qc_mod.laplacian_variance(arr)
@@ -278,10 +282,14 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     colony_types = _colony_types_from_request(arr, seg.boxes, masks, request)
 
     try:
-        save_run(RUNS_DIR, run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam, "experimental": experimental}, results=rows)
+        save_run(RUNS_DIR, run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam, "experimental": experimental, "status": status, "count": count, "is_blurry": is_blurry, "glare": glare, "retry": retry}, results=rows)
     except Exception:
         pass
-
+    # persist trace with decided_by for queue/audit (inbox = rule-only)
+    try:
+        (rdir / "trace.json").write_text(json.dumps(trace, indent=2))
+    except Exception:
+        pass
     (rdir / "boxes.json").write_text(json.dumps(_boxes_list(seg)))
 
     return {
@@ -779,6 +787,106 @@ def api_examples():
             if len(out) >= 3:
                 break
     return out
+
+
+@app.get("/api/queue", summary="List runs for review-by-exception queue", tags=["queue"])
+def api_queue():
+    """List runs: plate_id, time, location, count, status, needs_review, reasons, reviewed_by. Sorted needs_review first."""
+    try:
+        from labvision.queue import get_queue_items
+        return get_queue_items(RUNS_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/runs/{run_id}", summary="Get run detail (image, masks, boxes, trace)", tags=["queue"])
+def api_run_detail(run_id: str):
+    p = RUNS_DIR / run_id
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    run_json = p / "run.json"
+    boxes_p = p / "boxes.json"
+    trace_p = p / "trace.json"
+    inbox_p = p / "inbox.json"
+    approval_p = p / "approval.json"
+    try:
+        rec = json.loads(run_json.read_text()) if run_json.exists() else {}
+        boxes = json.loads(boxes_p.read_text()) if boxes_p.exists() else []
+        trace = json.loads(trace_p.read_text()) if trace_p.exists() else []
+        inbox = json.loads(inbox_p.read_text()) if inbox_p.exists() else {}
+        approval = json.loads(approval_p.read_text()) if approval_p.exists() else {}
+        # derive image size
+        w = h = 0
+        try:
+            from PIL import Image as _Im
+            im = _Im.open(p / "image.png")
+            w, h = im.size
+        except Exception:
+            pass
+        count = len(rec.get("results", []))
+        status = rec.get("params", {}).get("status", "ok")
+        if count > 300:
+            status = "tntc"
+        count_label = _count_label(count)
+        measurements = _measurements(rec.get("results", []))
+        return {
+            "run_id": run_id,
+            "plate_id": inbox.get("plate_id") or rec.get("inputs", {}).get("plate_id") or run_id,
+            "inputs": rec.get("inputs", {}),
+            "params": rec.get("params", {}),
+            "results": rec.get("results", []),
+            "boxes": boxes,
+            "trace": trace,
+            "inbox": inbox,
+            "approval": approval,
+            "image_url": f"/api/runs/{run_id}/image.png",
+            "masks_url": f"/api/runs/{run_id}/masks.png",
+            "csv_url": f"/api/runs/{run_id}/results.csv",
+            "image_w": w,
+            "image_h": h,
+            "count": count,
+            "count_label": count_label,
+            "status": status,
+            "measurements": measurements,
+            "colony_types": [],
+            "report": f"Plate {inbox.get('plate_id') or run_id} — {count_label} (loaded from queue)",
+            "duration_ms": 0,
+            "experimental": rec.get("params", {}).get("experimental", False),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/runs/{run_id}/approve", summary="Approve a run (human decision)", tags=["queue"])
+def api_approve(run_id: str, payload: dict):
+    reviewer = payload.get("reviewer") or payload.get("reviewed_by") or "technician"
+    if not reviewer or not str(reviewer).strip():
+        raise HTTPException(status_code=400, detail={"error": "missing reviewer", "hint": "Send {reviewer: name}"})
+    try:
+        from labvision.queue import approve_run
+        return approve_run(run_id, str(reviewer).strip(), RUNS_DIR)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="run not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/queue/approve_clean", summary="Approve all clean plates (no review reasons)", tags=["queue"])
+def api_approve_clean(payload: dict | None = None):
+    reviewer = (payload or {}).get("reviewer") or "technician"
+    try:
+        from labvision.queue import get_queue_items, approve_run
+        items = get_queue_items(RUNS_DIR)
+        approved = []
+        for it in items:
+            if not it["needs_review"] and not it["reviewed_by"]:
+                try:
+                    approve_run(it["run_id"], str(reviewer).strip(), RUNS_DIR)
+                    approved.append(it["run_id"])
+                except Exception:
+                    pass
+        return {"approved": approved, "count": len(approved)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/runs/{run_id}/image.png")
