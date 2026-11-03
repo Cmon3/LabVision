@@ -25,9 +25,31 @@ WEB_DIR = Path("web")
 
 app = FastAPI(title="LabVision Copilot API")
 
-# serve web frontend if present
+# serve web frontend if present (at /web and also at /)
 if WEB_DIR.exists():
     app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+    # serve index.html at / and static assets via / fallback
+    @app.get("/")
+    def _index():
+        return FileResponse(str(WEB_DIR / "index.html"), media_type="text/html")
+
+    @app.get("/api/examples/file")
+    def _example_file(path: str):
+        # allowed only under data/ to avoid traversal
+        p = Path(path)
+        # resolve relative to repo root
+        if not p.exists():
+            # try without leading /
+            p = Path(path.lstrip("/"))
+        if not p.exists() or "data" not in str(p.resolve()):
+            raise HTTPException(status_code=404, detail="not found")
+        # guard: must be inside data/
+        try:
+            p.resolve().relative_to(Path("data").resolve())
+        except Exception:
+            raise HTTPException(status_code=403, detail="forbidden")
+        mt = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+        return FileResponse(str(p), media_type=mt)
 
 
 def _status_for(qc_result, count: int) -> str:
@@ -441,3 +463,8 @@ def get_csv(run_id: str):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

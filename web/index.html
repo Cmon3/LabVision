@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LabVision Copilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<header class="hdr">
+  <div class="hdr-inner">
+    <div class="hdr-title">
+      <h1>LabVision Copilot</h1>
+      <p class="hdr-sub">Plate · colony quantification · research / QC</p>
+    </div>
+    <div class="chips" aria-label="models">
+      <span class="chip">SAM 3.1</span>
+      <span class="chip">Muse Spark Open</span>
+      <span class="chip">Muse Voice Transcribe</span>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- LEFT -->
+  <section class="panel left" aria-label="input">
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Drop image or click to choose file">
+      <div class="dz-icon">＋</div>
+      <p class="dz-text"><strong>Drop image here</strong> or click to choose</p>
+      <p class="dz-hint">JPG, PNG, TIFF — plate or micrograph</p>
+      <input id="fileInput" type="file" accept="image/*" hidden>
+      <img id="previewThumb" hidden alt="">
+    </div>
+
+    <div class="row gap">
+      <button id="cameraBtn" class="btn btn-ghost" type="button">Use camera</button>
+      <button id="cameraCaptureBtn" class="btn btn-ghost" type="button" hidden>Capture</button>
+      <button id="cameraCancelBtn" class="btn btn-ghost" type="button" hidden>Cancel</button>
+    </div>
+    <div id="cameraWrap" hidden>
+      <video id="cameraVideo" autoplay playsinline muted></video>
+      <canvas id="cameraCanvas" hidden></canvas>
+    </div>
+
+    <div id="examples" class="examples" aria-label="examples">
+      <span class="label">Examples</span>
+      <div id="exampleThumbs" class="thumbs"></div>
+    </div>
+
+    <label class="label" for="requestInput">Request</label>
+    <div class="request-row">
+      <textarea id="requestInput" rows="2" placeholder="count colonies larger than 2 mm">count colonies</textarea>
+      <button id="micBtn" class="mic" type="button" aria-label="Record request" title="Record request">🎙</button>
+    </div>
+    <div id="micStatus" class="mic-status" aria-live="polite"></div>
+
+    <button id="runBtn" class="btn btn-primary" type="button">Run</button>
+    <div id="leftStatus" class="left-status" aria-live="polite"></div>
+  </section>
+
+  <!-- RIGHT -->
+  <section class="panel right" aria-label="result">
+    <div id="emptyState" class="empty">
+      <p>Pick an example or drop an image, then <strong>Run</strong>.</p>
+      <p class="muted">Numbers come from deterministic <code>measure.py</code>, never the LLM.</p>
+    </div>
+
+    <div id="loadingState" class="loading" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loadingText">Analysing…</p>
+    </div>
+
+    <div id="errorState" class="error-box" hidden role="alert">
+      <p id="errorMsg"></p>
+      <p id="errorHint" class="muted"></p>
+    </div>
+
+    <div id="resultState" hidden>
+      <div class="hero">
+        <div>
+          <div id="countBig" class="count-big">—</div>
+          <div id="countSub" class="muted mono"></div>
+        </div>
+        <span id="statusPill" class="pill">ok</span>
+      </div>
+
+      <div class="viewer-toolbar">
+        <label class="chk"><input type="checkbox" id="masksToggle" checked> Masks</label>
+        <label class="chk"><input type="checkbox" id="boxesToggle" checked> Boxes</label>
+        <div class="seg"></div>
+        <span class="label">Click to correct:</span>
+        <button id="modeAdd" class="btn btn-sm is-active" type="button">Add colony</button>
+        <button id="modeRemove" class="btn btn-sm" type="button">Remove</button>
+      </div>
+
+      <div id="canvasWrap" class="canvas-wrap">
+        <canvas id="viewer"></canvas>
+        <div id="clickSpinner" class="click-spinner" hidden></div>
+      </div>
+      <p class="muted small">Click on the image to add or remove a detection. Coordinates are scaled to the original image.</p>
+
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="verify" class="tab is-active">How it was verified</button>
+        <button role="tab" data-tab="measure" class="tab">Measurements</button>
+        <button role="tab" data-tab="types" class="tab">Colony types</button>
+        <button role="tab" data-tab="report" class="tab">Report</button>
+      </div>
+
+      <div id="tab-verify" class="tab-panel is-active">
+        <ol id="traceList" class="timeline"></ol>
+      </div>
+      <div id="tab-measure" class="tab-panel" hidden>
+        <div class="table-wrap">
+          <table id="measureTable">
+            <thead><tr><th>#</th><th>Area (px²)</th><th>Diam (px)</th><th>Area (mm²)</th><th>Diam (mm)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <a id="csvLink" class="btn btn-ghost" href="#" download>Download CSV</a>
+      </div>
+      <div id="tab-types" class="tab-panel" hidden>
+        <div id="colonyTypes"></div>
+        <p class="muted small">Descriptive only. Confirm with standard microbiological methods.</p>
+      </div>
+      <div id="tab-report" class="tab-panel" hidden>
+        <pre id="reportText" class="report"></pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="ftr">
+  <span>Research/QC quantification. Not a medical device.</span>
+  <a href="https://github.com/anomalyco/labvision-copilot" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script src="/web/app.js"></script>
+</body>
+</html>

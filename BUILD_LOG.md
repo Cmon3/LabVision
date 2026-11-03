@@ -62,6 +62,7 @@ Summary (Oct 31 Session 4, measured features + honest grouping):
 
 | 2026-11-03 | S6 Step 1: API server.py (FastAPI) — /analyze, /correct, /transcribe, /examples, static | FastAPI + uvicorn + python-multipart; thin wrappers around segment/measure/qc/voice; trace + status (ok/tntc/blurry/glare/empty); tests/test_server.py 5 passed (70 total). |
 | 2026-11-03 | S6 Step 2 checkpoint: /api/analyze 14684 — 56 CFU (true 55), status ok, 2048×2048, 56 boxes | `curl -F image=@14684.jpg -F request="count colonies" /api/analyze` → run_id run_20261103T094738, trace check_quality ok (blur 53.8, glare 0.17%), segment round spot 56 boxes, plate 1650px 0.0545mm/px, count 56 CFU; masks_url + csv_url ok. Waiting for Simon to confirm before frontend. |
+| 2026-11-03 | S6 Step 3: web/ frontend (HTML+CSS+JS, no build) — lab instrument theme, drop/camera/examples/mic/canvas/tabs | Colors ink/muted/accent/ok/warn/fail + light/dark, Bricolage/Source Sans/JetBrains, canvas viewer masks+boxes+click-correct (scaled coords), mic Web Audio 24k WAV → /transcribe, 70 tests green. |
 
 ---
 Summary (Nov 3 Session 5, ship it):
