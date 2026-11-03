@@ -88,6 +88,35 @@
   </section>
 
   <section class="section">
+    <h2>Where it fits — a module, not a monolith</h2>
+    <p>LabVision is a drop-in module:</p>
+    <div class="steps">
+      <div class="step-card">
+        <div class="icon">🏭</div>
+        <h3>Automated lab</h3>
+        <p class="muted">Incubator/imager → <code>POST /api/analyze</code> with plate image → <code>{count, masks, run_id}</code> + <code>GET /api/runs/{id}</code> audit record. The device software calls the API.</p>
+      </div>
+      <div class="step-card">
+        <div class="icon">📷</div>
+        <h3>Small lab</h3>
+        <p class="muted">Phone on a stand or USB camera saves to <code>./inbox</code> (QR plate ID, optional <code>{location, alert_limit}</code> sidecar). Technician only reviews flagged plates in <a href="/app/queue">the queue</a> → Approve → <code>GET /api/export.csv</code> for LIMS.</p>
+      </div>
+    </div>
+    <div style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); font-family:'JetBrains Mono',monospace; font-size:.82rem; overflow:auto">
+      <div>Automated: [Imager] ─POST /api/analyze─▶ [LabVision] ─count+masks+trace─▶ [LIMS]</div>
+      <div>Small lab: &nbsp;[Camera] ─▶ inbox/ ─poll 2s─▶ [LabVision] ─▶ queue (Re-photo/TNTC/Empty/alert/low conf) ─Approve─▶ export.csv</div>
+    </div>
+    <p class="muted small" style="margin-top:8px">Both modes use the same fixed pipeline (no Muse in inbox, <code>decided_by: rule</code>). Alert limits below are <em>example values only</em>.</p>
+  </section>
+
+  <section class="section">
+    <h2>Queue — review by exception</h2>
+    <p>Only flagged plates need a human: blurry/glare → <span class="pill rephoto">Re-photo</span>, TNTC → <span class="pill tntc">TNTC</span>, empty → <span class="pill empty">Empty</span>, alert ≥ <em>example</em> limit, experimental/retry/low confidence (mean <code>c</code>&lt;0.5). Approve with your name (audit <code>human</code>).</p>
+    <p class="muted small">Live queue at <a href="/app/queue">/app/queue</a> (auto-refresh 3 s). Click a row to correct by click/box. <a href="/docs">API docs at /docs</a>.</p>
+    <img src="/docs/img/queue.png" alt="Queue screenshot" style="max-width:100%; border:1px solid var(--line); border-radius:8px; margin-top:8px" onerror="this.style.display='none'">
+  </section>
+
+  <section class="section">
     <h2>Results</h2>
     <p><strong>11.8% average error</strong> on 20 plates it never saw, <strong>7 exact</strong>. Same data, different prompt:</p>
     <div class="results-grid">

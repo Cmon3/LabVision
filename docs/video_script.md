@@ -35,7 +35,11 @@ that boundary. We tried flagging contaminated plates; it didn't beat the simple
 baseline, so a rule we wrote in advance removed it from the product.
 This is a verifiable agent: it shows its work and tells you what it can't do."
 
-## 2:45–3:00 · Close
+## 2:30–2:50 · From one plate to a whole session
+[Screen: inbox folder → queue filling live, 3 s refresh]
+"And it scales. With a phone on a stand or an incubator's camera, photos land in the inbox. The agent runs the fixed pipeline — no prompt guessing. Only flagged plates need a human: Re-photo for blur, TNTC for dense, Empty, or low confidence. You approve with your name, and the audit log goes straight to the LIMS as CSV."
+
+## 2:50–3:00 · Close
 "SAM 3.1 on the Meta Model API, Muse Spark Open on Baseten, fully open source.
 LabVision Copilot: from plate photo to a count you can audit, in seconds."
 

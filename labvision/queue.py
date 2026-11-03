@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
-RUNS_DIR = Path("runs")
+import os
+def _get_runs_dir() -> Path:
+    return Path(os.environ.get("LABVISION_RUNS_DIR", "runs"))
+RUNS_DIR = _get_runs_dir()
 
 # example alert limit (clearly labelled as example in UI/docs)
 ALERT_LIMIT_EXAMPLE = 100
@@ -30,7 +33,11 @@ def _load_json(path: Path) -> dict:
     except Exception:
         return {}
 
-def get_queue_items(runs_dir: Path = RUNS_DIR) -> list[dict]:
+def get_queue_items(runs_dir: Path | None = None) -> list[dict]:
+    if runs_dir is None:
+        runs_dir = _get_runs_dir()
+    else:
+        runs_dir = Path(runs_dir)
     items = []
     if not runs_dir.exists():
         return items
@@ -50,12 +57,6 @@ def get_queue_items(runs_dir: Path = RUNS_DIR) -> list[dict]:
         # count from results
         results = rec.get("results", [])
         count = len(results)
-        # try to get count from params if results empty but trace had count? fallback
-        # status
-        status = rec.get("params", {}).get("status") or rec.get("inputs", {}).get("status") or "ok"
-        # derive status from count if not stored
-        if count > 300:
-            status = "tntc"
         # plate_id
         plate_id = inbox.get("plate_id") or rec.get("inputs", {}).get("plate_id") or rec.get("params", {}).get("plate_id") or run_id
         # location
@@ -97,9 +98,33 @@ def get_queue_items(runs_dir: Path = RUNS_DIR) -> list[dict]:
                         glare = t.get("glare")
                     if "experimental" in t:
                         experimental = t["experimental"]
-        # confidence: check boxes.json for confidence? not stored; fallback
-        # try to get low confidence flag from params
+        # confidence: from params or trace
+        mean_conf = rec.get("params", {}).get("mean_confidence")
         low_conf = rec.get("params", {}).get("low_confidence", False)
+        if trace:
+            for t in trace:
+                if t.get("name") == "segment":
+                    if t.get("mean_confidence") is not None:
+                        mean_conf = t.get("mean_confidence")
+                    if t.get("low_confidence") is not None:
+                        low_conf = t.get("low_confidence")
+        # fallback compute low_conf from mean_conf if not stored
+        if mean_conf is not None and not low_conf:
+            try:
+                if float(mean_conf) < 0.5:
+                    low_conf = True
+            except Exception:
+                pass
+
+        # status must agree with reasons: blurry/glare -> Re-photo, TNTC -> TNTC, empty -> Empty, else OK
+        if is_blurry or glare:
+            status = "Re-photo"
+        elif count > 300:
+            status = "TNTC"
+        elif count == 0:
+            status = "Empty"
+        else:
+            status = "OK"
 
         reasons = []
         if is_blurry:
@@ -122,7 +147,7 @@ def get_queue_items(runs_dir: Path = RUNS_DIR) -> list[dict]:
         if retry:
             reasons.append("retry")
         if low_conf:
-            reasons.append("low confidence")
+            reasons.append(f"low conf {mean_conf:.2f}" if mean_conf is not None else "low confidence")
 
         needs_review = len(reasons) > 0
 
@@ -139,6 +164,8 @@ def get_queue_items(runs_dir: Path = RUNS_DIR) -> list[dict]:
             "reviewed_at": approval.get("reviewed_at"),
             "alert_limit": alert_limit,
             "experimental": experimental,
+            "mean_confidence": mean_conf,
+            "low_confidence": low_conf,
             "image_url": f"/api/runs/{run_id}/image.png",
             "masks_url": f"/api/runs/{run_id}/masks.png",
         })
@@ -158,7 +185,11 @@ def get_queue_items(runs_dir: Path = RUNS_DIR) -> list[dict]:
     # We'll keep needs_review first, then others by time.
     return items
 
-def approve_run(run_id: str, reviewer: str, runs_dir: Path = RUNS_DIR) -> dict:
+def approve_run(run_id: str, reviewer: str, runs_dir: Path | None = None) -> dict:
+    if runs_dir is None:
+        runs_dir = _get_runs_dir()
+    else:
+        runs_dir = Path(runs_dir)
     p = runs_dir / run_id
     if not p.exists():
         raise FileNotFoundError(run_id)

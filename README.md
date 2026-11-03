@@ -22,6 +22,30 @@ Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entr
 - **Human in the loop** — in the Result tab, one click fixes a missed colony (SAM point prompt adds a mask) or removes a false detection; the table, report and CSV update and every edit is logged separately from model output.
 - **Audit log + CSV** — every run writes `run.json` (inputs, model ids, params, including voice transcript and corrections) and `results.csv`.
 
+## Where it fits — a module, not a monolith
+
+![Queue — review by exception](docs/img/queue.png)
+
+- **Labs with automated incubators/imagers**: the device's software sends each plate image to `POST /api/analyze` and receives `{count, masks, status, run_id}` + `GET /api/runs/{id}` (trace with `decided_by: rule` for inbox, `model` for streaming) and `GET /api/export.csv` for LIMS import. The agent runs as a service behind the API — no UI needed.
+- **Small labs without automation**: any camera (phone on a stand, USB camera) saves photos into `./inbox` (poll every 2 s, size unchanged for 2 s, temp+rename; QR code → plate ID else filename; optional sidecar `{location, sample_type, alert_limit}` — *example values only*). LabVision picks them up (`python server.py --inbox ./inbox` or `python -m labvision.inbox ./inbox`), runs the fixed pipeline (`count colonies`, `decided_by: rule`), and the technician only reviews flagged plates in the queue at `/app/queue`.
+
+Diagram:
+
+```
+Automated: [Imager] ─POST /api/analyze─▶ [LabVision] ─count+masks+trace─▶ [LIMS]
+Small lab:  [Camera] ─▶ inbox/ ─poll▶ [LabVision] ─▶ queue (Re-photo/TNTC/Empty/alert/low conf c<0.5) ─Approve─▶ export.csv
+```
+
+Review-by-exception: blurry/glare → **Re-photo** (amber), TNTC (>300) → **TNTC** (amber), empty → **Empty** (grey), count ≥ *example* alert_limit, experimental/retry, low SAM confidence (mean `c` < 0.5) → coloured chips; sorted **Needs review** first, live refresh 3 s, click row → detail with click/box correction, reviewer name remembered in `localStorage`, `Approve` (human audit) + `Approve all clean plates`.
+
+## Integrating with an incubator/imager or LIMS
+
+- `POST /api/analyze` — multipart `image` + `request` (e.g. `count colonies`) → `{run_id, count, count_label, status: OK|Re-photo|TNTC|Empty, image_url, masks_url, boxes, measurements, trace: [{name, status, decided_by, mean_confidence}], report, csv_url}`
+- `GET /api/runs/{id}` → same shape for a stored run (audit: `inputs.plate_id`, `inputs.location`, `params.plate_id`, `params.status`, `params.mean_confidence`)
+- `GET /api/export.csv?from=2026-11-01T00:00:00Z&to=2026-11-02T00:00:00Z` → `plate_id,location,time,count,status,reviewed_by,reviewed_at,run_id` (one row per run, for LIMS; alert limits are *example values only*)
+- `POST /api/runs/{id}/approve` `{reviewer: "Name"}` → audit `approval.json` + `run.json:audit` with `decided_by: human`, `final_count`
+- OpenAPI docs at `/docs` — every endpoint has `summary` + example.
+
 ## Architecture
 
 ```mermaid
@@ -63,9 +87,10 @@ Full tables in [bench/RESULTS.md](bench/RESULTS.md); raw counts in `bench/result
 
 No other models are called at runtime.
 
-## Deploy (one command, two pages)
+## Deploy (one command, two pages + queue)
 
 - `python server.py` → `http://127.0.0.1:8000` landing, `http://127.0.0.1:8000/app` dashboard, `/app?example=14684` preloads that plate. `python app.py` (Gradio) stays as fallback on `:7860`.
+- `python server.py --inbox ./inbox` + `python scripts/simulate_camera.py --inbox ./inbox` → `http://127.0.0.1:8000/app/queue` live queue (review by exception, Approve → LIMS CSV at `GET /api/export.csv`).
 
 ## Responsible use
 
@@ -86,6 +111,8 @@ pip install -r requirements.txt
 cp .env.example .env  # fill META_API_KEY (SAM 3.1 + Voice) and BASETEN_API_KEY/BASETEN_BASE_URL (Muse Spark Open)
 # SAM 3.1 + Voice Transcribe use META_API_KEY; Muse Spark Open uses BASETEN_*
 python server.py               # → http://127.0.0.1:8000/ (landing) and /app (dashboard)
+python server.py --inbox ./inbox                     # poll inbox (QR, 2 s stability, temp+rename) + queue at /app/queue
+python scripts/simulate_camera.py --inbox ./inbox --count 10 --interval 3  # demo: fills inbox (dense 518 TNTC + blurred Re-photo)
 python app.py                  # fallback Gradio on http://127.0.0.1:7860
 python bench/run_bench.py      # counts vs ground truth (uses cache if present)
 python bench/run_morphotypes_v2.py  # morphotype benchmark (GT boxes, no SAM)

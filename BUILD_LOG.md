@@ -72,6 +72,7 @@ Summary (Oct 31 Session 4, measured features + honest grouping):
 | 2026-11-03 | Fix click-to-correct: prompt “<0f>1< |point;...|>” no-space, w/h=image, no fallback | Was “1< |point;...|>” (space, no <0f>) → 400 “invalid prompt: object 1 on frame 0 has no prompt token” then 200 empty; now point at 1442,1818 on 14684 → 188-char output_text + 0.76 fill, box at 1384,1760→192-char +0.78 fill; image.png now real PNG; manual mode + teal; 72 tests. |
 | 2026-11-03 | S8 Step 1: inbox ingest (poll 2s, QR plate ID, sidecar, processed/failed) | labvision/inbox.py poll ./inbox via QRCodeDetector→stem, sidecar {location,sample_type,alert_limit}, runs saved via server._analyze_image + plate_id enrichment; server --inbox thread + `python -m labvision.inbox ./inbox`; 77 tests. |
 | 2026-11-03 | S8 Step 2: queue (review-by-exception, approve, stability 2s, temp+rename) | GET /api/queue (plate_id/time/location/count/status/needs_review/reasons/reviewed_by, sorted needs_review first, coloured chips, filter all/needs/approved, click→/app?run_id= detail), POST /api/runs/{id}/approve + approve_clean (reviewer localStorage, audit HUMAN), live 3 s; inbox 2 s stability via size/mtime + dotfile skip, simulator temp+rename + blurred 518; trace decided_by rule for inbox; 80 tests. |
+| 2026-11-03 | S8 Step 3-4: export.csv + confidence + simulator + landing/README | GET /api/export.csv?from=&to= (plate_id/location/time/count/status/reviewed_by/run_id LIMS), OpenAPI summaries/tags; SAM include_confidence true → ;c=, mean c<0.5 → low conf + queue/trace; simulator temp+rename already; landing Where-it-fits diagram + queue section, README Where-it-fits + Integrating + deploy queue, video_script 2:30 block; inbox/ + runs_test_leftovers/ .gitignore; tests LABVISION_RUNS_DIR tmp_path, status Re-photo/TNTC/Empty/OK, approve disabled until name, 82 tests. |
 
 ---
 Summary (Nov 3 Session 5, ship it):
@@ -88,3 +89,11 @@ Summary (Nov 3 Session 7, guide + landing):
 - Numbers: 71 pytest passed; AGAR 11.8% mean error 7/20 exact, BBBC w1 5.48 w2 18.95.
 - Cost: 0 new SAM (cached), ~35 Muse calls earlier; total well under caps.
 - Next: Simon manual QA (6-point), then submit by Nov 4 17:00 Barcelona.
+
+---
+Summary (Nov 3 Session 8, inbox → queue → LIMS):
+- Done: inbox poll 2 s + 2 s stability temp+rename QR/sidecar, queue review-by-exception (Re-photo/TNTC/Empty/OK, alert example, c<0.5), approve human audit, export.csv, simulator (518+blur), landing/README Where-it-fits + queue, OpenAPI, confidence.
+- Blocked: none — dense 518 still undercount; small n limits claims.
+- Numbers: 82 pytest passed (LABVISION_RUNS_DIR tmp_path, runs_test_leftovers ignored); AGAR 11.8% 7/20 exact, BBBC w1 5.48 w2 18.95.
+- Cost: 0 new SAM (cache with _conf suffix, ~$0.6 bench), total well under $60+$20 caps.
+- Next: submit by Nov 4 17:00 Barcelona, X post, archive video.

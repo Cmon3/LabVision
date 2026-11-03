@@ -97,8 +97,9 @@ a{color:var(--teal)}
 .count-big{font-family:"Bricolage Grotesque",sans-serif; font-size:2rem; font-weight:700; line-height:1}
 .pill{font:600 .78rem "JetBrains Mono",monospace; padding:6px 10px; border-radius:999px; border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em}
 .pill.ok{background:color-mix(in srgb, var(--ok) 14%, var(--surface)); color:var(--ok); border-color:color-mix(in srgb, var(--ok) 30%, transparent)}
-.pill.warn,.pill.tntc{background:color-mix(in srgb, var(--warn) 14%, var(--surface)); color:var(--warn); border-color:color-mix(in srgb, var(--warn) 30%, transparent)}
-.pill.fail,.pill.blurry,.pill.glare,.pill.empty{background:color-mix(in srgb, var(--fail) 12%, var(--surface)); color:var(--fail); border-color:color-mix(in srgb, var(--fail) 30%, transparent)}
+.pill.warn,.pill.tntc,.pill.rephoto{background:color-mix(in srgb, var(--warn) 14%, var(--surface)); color:var(--warn); border-color:color-mix(in srgb, var(--warn) 30%, transparent)}
+.pill.fail,.pill.blurry,.pill.glare{background:color-mix(in srgb, var(--fail) 12%, var(--surface)); color:var(--fail); border-color:color-mix(in srgb, var(--fail) 30%, transparent)}
+.pill.empty{background:color-mix(in srgb, var(--muted) 14%, var(--surface)); color:var(--muted); border-color:color-mix(in srgb, var(--muted) 30%, transparent)}
 
 /* viewer */
 .viewer-toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:12px 0}

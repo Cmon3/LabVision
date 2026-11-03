@@ -7,7 +7,13 @@ import time
 import threading
 from pathlib import Path
 
-RUNS_DIR = Path("runs")
+import os
+def _get_runs_dir() -> Path:
+    return Path(os.environ.get("LABVISION_RUNS_DIR", "runs"))
+RUNS_DIR = _get_runs_dir()
+# helper to get current runs dir (respects env changes in tests)
+def _runs_dir() -> Path:
+    return Path(os.environ.get("LABVISION_RUNS_DIR", "runs"))
 EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 # 2 s stability for large copies (camera simulator uses temp+rename)
 STABILITY_S = 2.0
@@ -41,7 +47,8 @@ def _unique_run_id():
     # ponytail: collisions within same second are rare; add suffix if dir exists
     base = rid
     i = 0
-    while (RUNS_DIR / rid).exists():
+    runs = _runs_dir()
+    while (runs / rid).exists():
         i += 1
         rid = f"{base}_{i}"
         if i > 10:
@@ -73,7 +80,7 @@ def process_one(inbox_dir: Path, image_path: Path) -> dict:
 
         # enrich run.json with inbox metadata if present
         try:
-            rdir = RUNS_DIR / result["run_id"]
+            rdir = _runs_dir() / result["run_id"]
             jpath = rdir / "run.json"
             if jpath.exists():
                 rec = json.loads(jpath.read_text())

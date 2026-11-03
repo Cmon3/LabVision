@@ -54,7 +54,7 @@
   <div class="panel">
     <div class="table-wrap">
       <table class="queue-table">
-        <thead><tr><th>Plate ID</th><th>Time</th><th>Location</th><th>Count</th><th>Status</th><th>Needs review</th><th>Reviewed by</th><th>Action</th></tr></thead>
+        <thead><tr><th>Plate ID</th><th>Time</th><th>Location</th><th>Count</th><th>Conf</th><th>Status</th><th>Needs review</th><th>Reviewed by</th><th>Action</th></tr></thead>
         <tbody id="queueBody"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
@@ -69,9 +69,17 @@
 
 <script>
 const reviewerInput=document.getElementById("reviewerName");
+const approveCleanBtn=document.getElementById("approveCleanBtn");
+function pillClass(s){ const v=(s||"ok").toLowerCase(); if(v==="tntc") return "tntc"; if(v==="re-photo") return "rephoto"; if(v==="empty") return "empty"; if(v==="ok") return "ok"; return "ok"; }
+function updateApproveDisabled(){
+  const hasName=!!reviewerInput.value.trim();
+  approveCleanBtn.disabled=!hasName;
+  approveCleanBtn.title=hasName?"Approve all clean plates (no review reasons)":"Enter reviewer name first";
+  document.querySelectorAll(".approve-btn").forEach(b=>{ b.disabled=!hasName; b.title=hasName?"":"Enter reviewer name first"; });
+}
 reviewerInput.value=localStorage.getItem("labvision_reviewer")||"";
-reviewerInput.addEventListener("change",()=>localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()));
-reviewerInput.addEventListener("input",()=>localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()));
+reviewerInput.addEventListener("change",()=>{ localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()); updateApproveDisabled(); });
+reviewerInput.addEventListener("input",()=>{ localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()); updateApproveDisabled(); });
 
 let currentFilter="all";
 let lastData=[];
@@ -85,7 +93,11 @@ document.querySelectorAll("[data-filter]").forEach(b=>{
 });
 
 function reasonChip(r){
-  const cls=r.includes("TNTC")||r.startsWith("alert")?"TNTC":r;
+  let cls=r;
+  if(r.includes("TNTC")||r.startsWith("alert")) cls="TNTC";
+  else if(r.toLowerCase().includes("low conf")||r.includes("low confidence")) cls="low";
+  else if(r==="blurry"||r==="glare"||r==="empty") cls=r;
+  else if(r==="experimental"||r==="retry") cls=r;
   return `<span class="reason-chip ${cls}">${r}</span>`;
 }
 function fmtTime(iso){
@@ -100,19 +112,21 @@ function render(data){
   else if(currentFilter==="approved") filtered=data.filter(d=>d.reviewed_by);
   else filtered=data;
   if(!filtered.length){
-    tbody.innerHTML=`<tr><td colspan="8" class="muted">No plates — queue is empty</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="9" class="muted">No plates — queue is empty</td></tr>`;
     return;
   }
   tbody.innerHTML="";
   for(const r of filtered){
     const tr=document.createElement("tr");
     tr.className=(r.reviewed_by?"approved":r.needs_review?"needs-review":"");
+    const conf = r.mean_confidence!=null ? r.mean_confidence.toFixed(2) : "—";
     tr.innerHTML=`
       <td class="mono">${r.plate_id||r.run_id}</td>
       <td class="small">${fmtTime(r.time)}</td>
       <td>${r.location||"—"}</td>
       <td>${r.count}</td>
-      <td><span class="pill ${r.status||'ok'}">${r.status||'ok'}</span></td>
+      <td class="mono small">${conf}</td>
+      <td><span class="pill ${pillClass(r.status)}">${r.status||'ok'}</span></td>
       <td>${r.reasons && r.reasons.length ? r.reasons.map(reasonChip).join(" ") : '<span class="muted">—</span>'}</td>
       <td>${r.reviewed_by ? `${r.reviewed_by}<br><span class="small muted">${fmtTime(r.reviewed_at)}</span>` : "—"}</td>
       <td>${r.reviewed_by ? '<span class="small muted">approved</span>' : `<button class="btn btn-sm approve-btn" data-id="${r.run_id}">Approve</button>`}</td>
@@ -137,6 +151,7 @@ function render(data){
     }
     tbody.appendChild(tr);
   }
+  updateApproveDisabled();
 }
 
 async function fetchQueue(){
@@ -146,7 +161,7 @@ async function fetchQueue(){
     const data=await r.json();
     render(data);
   }catch(e){
-    document.getElementById("queueBody").innerHTML=`<tr><td colspan="8" class="muted">Queue unavailable: ${e.message}</td></tr>`;
+    document.getElementById("queueBody").innerHTML=`<tr><td colspan="9" class="muted">Queue unavailable: ${e.message}</td></tr>`;
   }
 }
 document.getElementById("approveCleanBtn").addEventListener("click", async ()=>{
@@ -159,6 +174,7 @@ document.getElementById("approveCleanBtn").addEventListener("click", async ()=>{
     await fetchQueue();
   }catch(e){ alert("Failed: "+e.message.slice(0,200)); }
 });
+updateApproveDisabled();
 
 fetchQueue();
 setInterval(fetchQueue, 3000);

@@ -10,4 +10,7 @@ opencode.json
 data/*
 !data/README.md
 runs/
+runs_test_leftovers/
 outputs/
+inbox/
+# simulator inbox is local-only

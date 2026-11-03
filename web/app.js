@@ -30,11 +30,14 @@ function setError(err, hint){ errorMsg.textContent = err||"Error"; errorHint.tex
 function pillClass(status){
   const s=(status||"ok").toLowerCase();
   if(s==="tntc") return "tntc";
-  if(s==="blurry"||s==="glare"||s==="empty") return s;
+  if(s==="re-photo") return "rephoto";
+  if(s==="empty") return "empty";
   if(s==="ok") return "ok";
+  // legacy: blurry/glare map to re-photo
+  if(s==="blurry"||s==="glare") return "rephoto";
   return "ok";
 }
-function isTNTC(status, count){ return status==="tntc" || count>300; }
+function isTNTC(status, count){ return (status||"").toLowerCase()==="tntc" || count>300; }
 
 function setFile(blob, name){
   selectedFile = blob;
@@ -216,6 +219,7 @@ function upsertLiveStep(evt){
   if(vals.prompt) parts.push("prompt "+vals.prompt);
   if(vals.prompt_used) parts.push("prompt "+vals.prompt_used);
   if(vals.boxes!==undefined) parts.push(vals.boxes+" boxes");
+  if(vals.mean_confidence!=null) parts.push(`conf ${Number(vals.mean_confidence).toFixed(2)}${vals.low_confidence?" low":""}`);
   if(vals.count!==undefined) parts.push("count "+vals.count);
   if(vals.plate_diameter_px) parts.push("plate "+vals.plate_diameter_px+"px");
   if(vals.mm_per_px) parts.push(vals.mm_per_px+" mm/px");
@@ -300,7 +304,8 @@ function renderResult(data){
   const isT=isTNTC(data.status, data.count);
   countBig.textContent = data.count_label || (isT ? "TNTC >300" : data.count+" CFU");
   countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h} · ${data.duration_ms||""} ms` + (data.experimental?" · experimental — not benchmarked":"") : (data.experimental?"experimental — not benchmarked":"");
-  statusPill.textContent = data.status==="tntc" ? "TNTC — dilute & re-plate" : data.status==="blurry" ? "blurry — re-photo" : data.status==="glare" ? "glare" : data.status==="empty" ? "empty" : "OK";
+  const s=(data.status||"ok").toLowerCase();
+  statusPill.textContent = s==="tntc" ? "TNTC — dilute & re-plate" : s==="re-photo" ? "Re-photo — retake" : s==="empty" ? "Empty" : "OK";
   statusPill.className="pill "+pillClass(data.status);
   loadViewerImages(data);
   renderTrace(data.trace||[]);
@@ -328,6 +333,7 @@ function renderTrace(trace){
     if(t.plate_diameter_px) parts.push("plate "+t.plate_diameter_px+"px");
     if(t.mm_per_px) parts.push(t.mm_per_px+" mm/px");
     if(t.boxes!==undefined) parts.push(t.boxes+" boxes");
+    if(t.mean_confidence!=null) parts.push(`conf ${Number(t.mean_confidence).toFixed(2)}${t.low_confidence?" (low)":""}`);
     if(t.count!==undefined) parts.push("count "+t.count);
     if(t.duration_ms!==undefined) parts.push(t.duration_ms+"ms");
     if(t.model) parts.push(t.model);

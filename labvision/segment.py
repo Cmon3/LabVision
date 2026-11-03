@@ -20,9 +20,9 @@ MODEL = "sam-3.1"
 CACHE_DIR = Path("runs/cache")
 
 BOX_RE = re.compile(
-    r"<\s*\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+);w=(\d+);h=(\d+)[^|]*\|>"
+    r"<\s*\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+);w=(\d+);h=(\d+)(?:;c=([0-9]*\.?[0-9]+))?[^|]*\|>"
 )
-MASK_RE = re.compile(r"<\s*\|mask;x=(\d+);y=(\d+);data=([^|]*)\|>")
+MASK_RE = re.compile(r"<\s*\|mask;x=(\d+);y=(\d+);data=([^|]*?)(?:;c=([0-9]*\.?[0-9]+))?\|>")
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,7 @@ class Box:
     y1: int
     x2: int
     y2: int
+    c: float | None = None
 
 
 @dataclass
@@ -40,6 +41,14 @@ class Segmentation:
     width: int
     height: int
     cached: bool = False
+    confidences: list[float | None] | None = None  # per-box c
+
+    @property
+    def mean_confidence(self) -> float | None:
+        if not self.confidences:
+            return None
+        vals = [c for c in self.confidences if c is not None]
+        return sum(vals) / len(vals) if vals else None
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -144,7 +153,8 @@ def _slug(prompt: str) -> str:
 
 
 def _cache_path(img_hash: str, prompt: str) -> Path:
-    return CACHE_DIR / f"{img_hash[:16]}_{_slug(prompt)}_{MODEL}.json"
+    # include confidence flag in cache name so old cache (without c) is not reused
+    return CACHE_DIR / f"{img_hash[:16]}_{_slug(prompt)}_{MODEL}_conf.json"
 
 
 def _guess_mime(image_bytes: bytes) -> str:
@@ -197,13 +207,27 @@ def _extract_output_text(payload: dict | list) -> str:
     return "".join(texts)
 
 
-def parse_output_text(output_text: str) -> tuple[list[Box], list[str], int, int]:
+def parse_output_text(output_text: str) -> tuple[list[Box], list[str], int, int, list[float | None]]:
     """Parse boxes; keep mask payloads raw. Empty string -> no detections."""
-    boxes = [Box(int(x1), int(y1), int(x2), int(y2)) for x1, y1, x2, y2, _, _ in BOX_RE.findall(output_text)]
-    raw_masks = [m[2] for m in MASK_RE.findall(output_text)]
+    # BOX_RE now has 7 groups: x1,y1,x2,y2,w,h,c
+    boxes = []
+    confidences: list[float | None] = []
+    for x1, y1, x2, y2, _, _, c in BOX_RE.findall(output_text):
+        boxes.append(Box(int(x1), int(y1), int(x2), int(y2), float(c) if c else None))
+        confidences.append(float(c) if c else None)
+    # fallback: also try mask c if box c missing
+    mask_matches = MASK_RE.findall(output_text)
+    raw_masks = [m[2] for m in mask_matches]
+    # if boxes have no c but masks do, use mask c
+    if mask_matches and all(cc is None for cc in confidences):
+        for _, _, _, c in mask_matches:
+            if c:
+                # assign to corresponding box if lengths match
+                confidences = [float(_c) if _c else None for _, _, _, _c in mask_matches]
+                break
     wh = BOX_RE.search(output_text)
     w, h = (int(wh.group(5)), int(wh.group(6))) if wh else (0, 0)
-    return boxes, raw_masks, w, h
+    return boxes, raw_masks, w, h, confidences
 
 
 def _call_sam(image_bytes: bytes, prompt: str, mime: str) -> str:
@@ -222,7 +246,7 @@ def _call_sam(image_bytes: bytes, prompt: str, mime: str) -> str:
             }
         ],
         "stream": False,
-        "metadata": {"mask_encoding": "one_bit"},
+        "metadata": {"mask_encoding": "one_bit", "include_confidence": "true"},
     }
     r = requests.post(
         API_URL,
@@ -253,9 +277,22 @@ def segment(
             width=d["width"],
             height=d["height"],
             cached=True,
+            confidences=d.get("confidences"),
+        )
+    # fallback old cache (without confidence) for migration
+    old_path = CACHE_DIR / f"{img_hash[:16]}_{_slug(prompt)}_{MODEL}.json"
+    if use_cache and old_path.exists():
+        d = json.loads(old_path.read_text())
+        return Segmentation(
+            boxes=[Box(**b) for b in d["boxes"]],
+            raw_masks=d["raw_masks"],
+            width=d["width"],
+            height=d["height"],
+            cached=True,
+            confidences=d.get("confidences"),
         )
     output_text = _call_sam(image_bytes, prompt, mime)
-    boxes, raw_masks, w, h = parse_output_text(output_text)
+    boxes, raw_masks, w, h, confidences = parse_output_text(output_text)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -268,10 +305,11 @@ def segment(
                 "raw_masks": raw_masks,
                 "width": w,
                 "height": h,
+                "confidences": confidences,
             }
         )
     )
-    return Segmentation(boxes=boxes, raw_masks=raw_masks, width=w, height=h)
+    return Segmentation(boxes=boxes, raw_masks=raw_masks, width=w, height=h, confidences=confidences)
 
 
 def _build_point_prompt(x: int, y: int, w: int, h: int, obj_id: int = 1) -> str:

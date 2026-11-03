@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw
@@ -25,8 +25,12 @@ from labvision import qc as qc_mod
 from labvision.config import AGAR_PROMPT
 from labvision.runlog import new_run_id, save_run
 from labvision.segment import segment, segment_point
+import os
 
-RUNS_DIR = Path("runs")
+def _get_runs_dir() -> Path:
+    return Path(os.environ.get("LABVISION_RUNS_DIR", "runs"))
+
+RUNS_DIR = _get_runs_dir()
 CACHE_DIR = Path("runs/cache")
 WEB_DIR = Path("web")
 
@@ -64,15 +68,13 @@ if WEB_DIR.exists():
 
 
 def _status_for(qc_result, count: int) -> str:
+    if qc_result and (qc_result.get("is_blurry") or qc_result.get("glare")):
+        return "Re-photo"
     if count > 300:
-        return "tntc"
-    if qc_result and qc_result.get("is_blurry"):
-        return "blurry"
-    if qc_result and qc_result.get("glare"):
-        return "glare"
+        return "TNTC"
     if count == 0:
-        return "empty"
-    return "ok"
+        return "Empty"
+    return "OK"
 
 
 def _count_label(count: int) -> str:
@@ -156,7 +158,7 @@ def _colony_types_from_request(image_arr, boxes, masks, request: str) -> list[di
 def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) -> dict[str, Any]:
     t0 = time.time()
     run_id = run_id or new_run_id()
-    rdir = RUNS_DIR / run_id
+    rdir = _get_runs_dir() / run_id
     rdir.mkdir(parents=True, exist_ok=True)
 
     img_path = rdir / "image.png"
@@ -194,6 +196,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         seg_prompt = "cell"
     lower_req = request.lower()
     experimental = False
+    mean_c = None
+    low_conf = False
     try:
         seg = segment(image_bytes, seg_prompt)
         retry = False
@@ -205,7 +209,9 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
                 seg_prompt = alt
                 retry = True
         masks = seg.decoded_masks()
-        _trace("segment", "ok" if len(seg.boxes) else "warn", prompt_used=seg_prompt, retry=retry, boxes=len(seg.boxes), duration_ms=int((time.time()-t)*1000), model="sam-3.1")
+        mean_c = seg.mean_confidence
+        low_conf = mean_c is not None and mean_c < 0.5
+        _trace("segment", "ok" if len(seg.boxes) else "warn", prompt_used=seg_prompt, retry=retry, boxes=len(seg.boxes), duration_ms=int((time.time()-t)*1000), model="sam-3.1", mean_confidence=round(mean_c, 3) if mean_c is not None else None, low_confidence=low_conf)
         if any(c in seg_prompt.lower() for c in ["black", "yellow", "white", "cream", "red", "brown", "green", "gold", "beige"]):
             experimental = True
     except Exception as e:
@@ -282,7 +288,7 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     colony_types = _colony_types_from_request(arr, seg.boxes, masks, request)
 
     try:
-        save_run(RUNS_DIR, run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam, "experimental": experimental, "status": status, "count": count, "is_blurry": is_blurry, "glare": glare, "retry": retry}, results=rows)
+        save_run(_get_runs_dir(), run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam, "experimental": experimental, "status": status, "count": count, "is_blurry": is_blurry, "glare": glare, "retry": retry, "mean_confidence": mean_c, "low_confidence": low_conf}, results=rows)
     except Exception:
         pass
     # persist trace with decided_by for queue/audit (inbox = rule-only)
@@ -316,7 +322,7 @@ def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
 
-@app.post("/api/analyze_stream")
+@app.post("/api/analyze_stream", summary="Analyze plate with live progress (SSE)", tags=["analysis"])
 async def api_analyze_stream(image: UploadFile = File(...), request: str = Form("")):
     data = await image.read()
     if not data:
@@ -329,7 +335,7 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
         t0 = time.time()
         # save image to temp run dir via agent's expected path handling
         run_id = new_run_id()
-        rdir = RUNS_DIR / run_id
+        rdir = _get_runs_dir() / run_id
         rdir.mkdir(parents=True, exist_ok=True)
         img_path = rdir / "image.png"
         try:
@@ -501,7 +507,7 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.post("/api/analyze")
+@app.post("/api/analyze", summary="Analyze plate image (count colonies)", tags=["analysis"])
 async def api_analyze(image: UploadFile = File(...), request: str = Form("")):
     data = await image.read()
     if not data:
@@ -518,7 +524,7 @@ async def api_analyze(image: UploadFile = File(...), request: str = Form("")):
         return JSONResponse(status_code=500, content={"error": msg[:400], "hint": hint})
 
 
-@app.post("/api/correct")
+@app.post("/api/correct", summary="Correct detection (add/remove/manual)", tags=["analysis"])
 async def api_correct(payload: dict):
     run_id = payload.get("run_id")
     mode = payload.get("mode", "add")
@@ -536,7 +542,7 @@ async def api_correct(payload: dict):
         pass
     elif x is None or y is None:
         raise HTTPException(status_code=400, detail={"error": "missing x/y", "hint": "Send {run_id, x, y, mode: add|remove} or {run_id, x1,y1,x2,y2}"})
-    rdir = RUNS_DIR / run_id
+    rdir = _get_runs_dir() / run_id
     if not rdir.exists():
         raise HTTPException(status_code=404, detail={"error": "run not found", "hint": f"No run {run_id}"})
     img_path = rdir / "image.png"
@@ -736,7 +742,7 @@ async def api_correct(payload: dict):
             wtr.writerows(rows)
 
     try:
-        save_run(RUNS_DIR, run_id, inputs={"correction": action}, model_ids={"sam": "sam-3.1"}, params={"mode": mode}, results=rows)
+        save_run(_get_runs_dir(), run_id, inputs={"correction": action}, model_ids={"sam": "sam-3.1"}, params={"mode": mode}, results=rows)
     except Exception:
         pass
 
@@ -755,7 +761,7 @@ async def api_correct(payload: dict):
     }
 
 
-@app.post("/api/transcribe")
+@app.post("/api/transcribe", summary="Transcribe voice request (hands-free)", tags=["analysis"])
 async def api_transcribe(audio: UploadFile = File(...)):
     data = await audio.read()
     if not data:
@@ -772,7 +778,7 @@ async def api_transcribe(audio: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"error": msg[:400], "hint": hint})
 
 
-@app.get("/api/examples")
+@app.get("/api/examples", summary="List example plates", tags=["analysis"])
 def api_examples():
     cands = [
         "data/agar_demo/AGAR_representative/lower-resolution/14684.jpg",
@@ -794,13 +800,13 @@ def api_queue():
     """List runs: plate_id, time, location, count, status, needs_review, reasons, reviewed_by. Sorted needs_review first."""
     try:
         from labvision.queue import get_queue_items
-        return get_queue_items(RUNS_DIR)
+        return get_queue_items(_get_runs_dir())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/runs/{run_id}", summary="Get run detail (image, masks, boxes, trace)", tags=["queue"])
 def api_run_detail(run_id: str):
-    p = RUNS_DIR / run_id
+    p = _get_runs_dir() / run_id
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
     run_json = p / "run.json"
@@ -823,9 +829,25 @@ def api_run_detail(run_id: str):
         except Exception:
             pass
         count = len(rec.get("results", []))
-        status = rec.get("params", {}).get("status", "ok")
-        if count > 300:
-            status = "tntc"
+        # status must match queue logic
+        is_bl = rec.get("params", {}).get("is_blurry")
+        gl = rec.get("params", {}).get("glare")
+        # check trace if params missing
+        if trace:
+            for t in trace:
+                if t.get("name") == "check_quality":
+                    if t.get("is_blurry") is not None:
+                        is_bl = t.get("is_blurry")
+                    if t.get("glare") is not None:
+                        gl = t.get("glare")
+        if is_bl or gl:
+            status = "Re-photo"
+        elif count > 300:
+            status = "TNTC"
+        elif count == 0:
+            status = "Empty"
+        else:
+            status = "OK"
         count_label = _count_label(count)
         measurements = _measurements(rec.get("results", []))
         return {
@@ -864,7 +886,7 @@ def api_approve(run_id: str, payload: dict):
         raise HTTPException(status_code=400, detail={"error": "missing reviewer", "hint": "Send {reviewer: name}"})
     try:
         from labvision.queue import approve_run
-        return approve_run(run_id, str(reviewer).strip(), RUNS_DIR)
+        return approve_run(run_id, str(reviewer).strip(), _get_runs_dir())
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="run not found")
     except Exception as e:
@@ -875,12 +897,12 @@ def api_approve_clean(payload: dict | None = None):
     reviewer = (payload or {}).get("reviewer") or "technician"
     try:
         from labvision.queue import get_queue_items, approve_run
-        items = get_queue_items(RUNS_DIR)
+        items = get_queue_items(_get_runs_dir())
         approved = []
         for it in items:
             if not it["needs_review"] and not it["reviewed_by"]:
                 try:
-                    approve_run(it["run_id"], str(reviewer).strip(), RUNS_DIR)
+                    approve_run(it["run_id"], str(reviewer).strip(), _get_runs_dir())
                     approved.append(it["run_id"])
                 except Exception:
                     pass
@@ -889,31 +911,76 @@ def api_approve_clean(payload: dict | None = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/runs/{run_id}/image.png")
+@app.get("/api/export.csv", summary="Export queue for LIMS (CSV)", tags=["integration"])
+def api_export_csv(from_: str | None = Query(None, alias="from"), to: str | None = Query(None, alias="to")):
+    """One row per run: plate_id, location, time, count, status, reviewed_by, reviewed_at, run_id. Filter by ?from=&to= ISO dates. Example: /api/export.csv?from=2026-11-01T00:00:00Z`."""
+    try:
+        from labvision.queue import get_queue_items
+        from datetime import datetime
+        items = get_queue_items(_get_runs_dir())
+        # parse filters
+        def _parse(s):
+            if not s:
+                return None
+            try:
+                # handle URL alias from_ -> from
+                return datetime.fromisoformat(s.replace("Z", "+00:00"))
+            except Exception:
+                return None
+        f = _parse(from_)
+        t = _parse(to)
+        if f or t:
+            filtered=[]
+            for it in items:
+                try:
+                    ts = datetime.fromisoformat(it["time"].replace("Z", "+00:00")) if it.get("time") else None
+                except Exception:
+                    ts=None
+                if f and ts and ts < f:
+                    continue
+                if t and ts and ts > t:
+                    continue
+                filtered.append(it)
+            items=filtered
+        # build CSV
+        import io
+        out = io.StringIO()
+        w = csv.DictWriter(out, fieldnames=["plate_id","location","time","count","status","reviewed_by","reviewed_at","run_id"])
+        w.writeheader()
+        for it in items:
+            w.writerow({k: it.get(k, "") for k in ["plate_id","location","time","count","status","reviewed_by","reviewed_at","run_id"]})
+        csv_bytes = out.getvalue().encode()
+        from fastapi.responses import Response
+        return Response(content=csv_bytes, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=export.csv"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/runs/{run_id}/image.png", summary="Get run image", tags=["runs"])
 def get_image(run_id: str):
-    p = RUNS_DIR / run_id / "image.png"
+    p = _get_runs_dir() / run_id / "image.png"
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
     return FileResponse(str(p), media_type="image/png")
 
 
-@app.get("/api/runs/{run_id}/masks.png")
+@app.get("/api/runs/{run_id}/masks.png", summary="Get run masks overlay", tags=["runs"])
 def get_masks(run_id: str):
-    p = RUNS_DIR / run_id / "masks.png"
+    p = _get_runs_dir() / run_id / "masks.png"
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
     return FileResponse(str(p), media_type="image/png")
 
 
-@app.get("/api/runs/{run_id}/results.csv")
+@app.get("/api/runs/{run_id}/results.csv", summary="Get run measurements CSV", tags=["runs"])
 def get_csv(run_id: str):
-    p = RUNS_DIR / run_id / "results.csv"
+    p = _get_runs_dir() / run_id / "results.csv"
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
     return FileResponse(str(p), media_type="text/csv", filename="results.csv")
 
 
-@app.get("/health")
+@app.get("/health", summary="Health check", tags=["system"])
 def health():
     return {"ok": True}
 

@@ -10,8 +10,20 @@ from labvision.segment import Box, Segmentation, parse_output_text
 
 def test_parse_boxes_tolerant():
     s = '<0f>0< |box;x1=10;y1=10;x2=50;y2=50;w=100;h=100|>< |mask;x=0;y=0;data=10,10,~abc|>'
-    boxes, raw, w, h = parse_output_text(s)
+    out = parse_output_text(s)
+    boxes, raw, w, h = out[0], out[1], out[2], out[3]
     assert len(boxes) == 1 and w == 100
+
+def test_parse_boxes_with_confidence():
+    s = '<0f>0< |box;x1=10;y1=10;x2=50;y2=50;w=100;h=100;c=0.87|>< |mask;x=0;y=0;data=10,10,~abc;c=0.87|>'
+    boxes, raw, w, h, confs = parse_output_text(s)
+    assert len(boxes) == 1 and w == 100
+    assert boxes[0].c == 0.87
+    assert confs[0] == 0.87
+    # mean confidence
+    from labvision.segment import Segmentation
+    seg = Segmentation(boxes=boxes, raw_masks=raw, width=w, height=h, confidences=confs)
+    assert seg.mean_confidence == 0.87
 
 
 def test_decode_real_cached_one_bit():
