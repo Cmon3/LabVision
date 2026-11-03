@@ -60,6 +60,8 @@ Summary (Oct 31 Session 4, measured features + honest grouping):
 - Cost: 0 new SAM (cache/GT boxes), ~35 Muse calls earlier + ~0 for v2 (features only) + future per-group Muse ~28 calls; total cum ~$1.9 under caps.
 - Next: polish app (descriptive-only table), update README, record video Nov 1-4.
 
+| 2026-11-03 | S6 Step 1: API server.py (FastAPI) — /analyze, /correct, /transcribe, /examples, static | FastAPI + uvicorn + python-multipart; thin wrappers around segment/measure/qc/voice; trace + status (ok/tntc/blurry/glare/empty); tests/test_server.py 5 passed (70 total). |
+
 ---
 Summary (Nov 3 Session 5, ship it):
 - Done: README rewrite (10 sections, mermaid, demo.png), app polish (tabs/overlay toggle/verification/examples/webcam), voice input (Muse Voice Transcribe, cached, hands-free), click-to-correct (SAM point prompts, runlog), tag v1.0-hackathon.
