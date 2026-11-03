@@ -68,6 +68,7 @@ Summary (Oct 31 Session 4, measured features + honest grouping):
 | 2026-11-03 | Honesty fix: analyze_stream via agent on_event, no hardcoded plan/prompt — Muse decides | agent run_agent(on_event) emits real tool calls (model) / results (rule); server removes keyword routing, forwards via asyncio queue+thread; report from Muse + Python numbers; test asserts model events only from Muse; 71 tests. |
 | 2026-11-03 | S7 Step 2: suggested chips + countable + experimental + empty hints/tooltips | Chips under request (7) fill input; agent segment prompt benchmarked “round spot”/“cell” + experimental colour handling; empty state 3-step hints, tooltips on Add/Remove/Masks; /app?example=14684 preload; 71 tests. |
 | 2026-11-03 | S7 Step 3: landing page (same deploy) — “AI counts. Technicians decide.” | web/landing.html with hero/problem/how-it-works/results/built-with/won’t-do/footer; “Try an example plate” → /app?example=14684; routes “/” landing, “/app” dashboard, “/web” static; 71 tests. |
+| 2026-11-03 | S7 Step 4: README (landing + live screenshots, / and /app, 6-point check) | Screenshots landing.png/live.png, deploy section, manual check list; 71 tests. |
 
 ---
 Summary (Nov 3 Session 5, ship it):
@@ -76,3 +77,11 @@ Summary (Nov 3 Session 5, ship it):
 - Numbers: 65 pytest passed; AGAR 11.8% mean error 7/20 exact, BBBC w1 5.48 w2 18.95; morphotypes flag 80% vs 90% baseline (removed).
 - Cost: 0 new SAM (≤250 used, cached), voice $0.18/h billed per sec; total well under $60 SAM + $20 Muse caps.
 - Next: submit by Nov 4 17:00 Barcelona, X post with link, archive video.
+
+---
+Summary (Nov 3 Session 7, guide + landing):
+- Done: live stream via agent on_event (honest model badges), chips (7) + countable + experimental colour, 3-step empty hints/tooltips, landing “AI counts. Technicians decide.” with / and /app, README screenshots + 6-point check.
+- Blocked: none — dense plate 518 TNTC still; small n limits claims.
+- Numbers: 71 pytest passed; AGAR 11.8% mean error 7/20 exact, BBBC w1 5.48 w2 18.95.
+- Cost: 0 new SAM (cached), ~35 Muse calls earlier; total well under caps.
+- Next: Simon manual QA (6-point), then submit by Nov 4 17:00 Barcelona.

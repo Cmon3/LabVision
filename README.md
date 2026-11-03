@@ -3,6 +3,8 @@
 Plate photo + plain request → colony count you can audit.
 
 ![Demo — AGAR 14684.jpg: 55 true, 56 predicted](docs/img/demo.png)
+![Landing — AI counts. Technicians decide.](docs/img/landing.png)
+![Live — agent streams its work, Muse decides prompts](docs/img/live.png)
 
 ## Built during the hackathon
 
@@ -61,6 +63,10 @@ Full tables in [bench/RESULTS.md](bench/RESULTS.md); raw counts in `bench/result
 
 No other models are called at runtime.
 
+## Deploy (one command, two pages)
+
+- `python server.py` → `http://127.0.0.1:8000` landing, `http://127.0.0.1:8000/app` dashboard, `/app?example=14684` preloads that plate. `python app.py` (Gradio) stays as fallback on `:7860`.
+
 ## Responsible use
 
 Research and QC quantification (pharma, food/water, teaching) with human review. Not a medical device. Do not use for clinical decisions. No medical advice. If you see unexpected results, re-photo and check the verification panel.
@@ -79,12 +85,22 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env  # fill META_API_KEY (SAM 3.1 + Voice) and BASETEN_API_KEY/BASETEN_BASE_URL (Muse Spark Open)
 # SAM 3.1 + Voice Transcribe use META_API_KEY; Muse Spark Open uses BASETEN_*
-python app.py                  # → http://127.0.0.1:7860
+python server.py               # → http://127.0.0.1:8000/ (landing) and /app (dashboard)
+python app.py                  # fallback Gradio on http://127.0.0.1:7860
 python bench/run_bench.py      # counts vs ground truth (uses cache if present)
 python bench/run_morphotypes_v2.py  # morphotype benchmark (GT boxes, no SAM)
 ```
 
 Keys are read from environment only and never logged. Every external call is cached by input hash in `runs/cache/`, so reruns are free.
+
+## Manual check (for Simon)
+
+1. `python server.py` → `/` shows landing with hero “AI counts. Technicians decide.”
+2. **Try an example plate** opens `/app?example=14684` with plate loaded.
+3. Press **Run** → live steps tick one by one (spinner → ✓/!/✕ with model/rule badge).
+4. Click a suggested chip (e.g. “count black colonies (experimental)”) → request box fills.
+5. Run “count black colonies” → result shows **experimental — not benchmarked** and count; prompt in trace is `black round spot` from Muse.
+6. Report count matches trace/measurements table; `is this plate countable?` shows countable verdict.
 
 ## License
 
