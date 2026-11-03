@@ -100,8 +100,11 @@ def run_verification(ctx: dict, report: dict) -> dict:
         for n in nums:
             allowed_numbers.add(n)
 
-    # check summary numbers
+    # check summary numbers — allow countable phrasing 30/300 and plate 90 as non-measured (they are policy, not LLM invention)
+    ALLOWED_NON_MEASURED = {"30", "300", "90", "90.0", "90.00"}
     for num in _numbers_in_text(summary):
+        if num in ALLOWED_NON_MEASURED:
+            continue
         # skip years? not needed
         if num not in allowed_numbers:
             # allow small numbers like 2-3 sentences? be lenient: allow numbers that are derived from count-related wording
@@ -119,6 +122,8 @@ def run_verification(ctx: dict, report: dict) -> dict:
 
     # also scan notes for numbers
     for num in _numbers_in_text(notes):
+        if num in ALLOWED_NON_MEASURED:
+            continue
         if num not in allowed_numbers:
             try:
                 if int(float(num)) > 10:

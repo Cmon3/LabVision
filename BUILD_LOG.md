@@ -92,6 +92,8 @@ Summary (Nov 3 Session 7, guide + landing):
 
 | 2026-11-03 | S9 Step 1: submit_report + verification/verify_report.py + progress + escalations | labvision/system_instructions.md (from agent SYSTEM), verification/verify_report.py (count match, no LLM numbers, QC→rephoto, countable TNTC/too few, benchmarked prompt→experimental, no organism/diagnosis), labvision/escalation.py + progress.py, agent submit_report inside-tool verification + MAX_TURNS 8 + save_progress per turn + paused on API error, server + queue escalation wiring; 82 tests. |
 | 2026-11-03 | S9 Step 2: escalations named rules + queue handoff + auto-resume | labvision/escalation.py rules needs_rephoto/report_refused/awaiting_signoff (status running/needs_input/awaiting_signoff/done/paused), inbox auto-resume same plate_id → resume_image.json + rephoto_arrived.json, queue handoff display (what_blocked/why/request + Resume button), server /review /guidance /resume /progress + ESCALATION_RULES.md + VERIFICATION.md; web/queue.html handoff + resume; labvision/progress.py resume_payload; 82 tests. |
+| 2026-11-03 | S9 Step 3: loop hygiene (one tool/turn, plain text, turn limit 8, paused, progress) | labvision/agent.py MAX_TURNS 8, parallel_tool_calls False, plain text not accepted (warn), paused on API error → status.json paused, progress.json per turn (messages+status), system_instructions.md sent unchanged; already covered in Step 1; 82 tests. |
+| 2026-11-03 | S9 Step 4: tests with scripted fake model | tests/fake_model.py ScriptedMuse planner + SAM outputs, tests/test_verification.py (wrong count refused, 3 refusals → report_refused, blurry → needs_rephoto → new photo resumes, reject → revised); 86 tests. |
 
 ---
 Summary (Nov 3 Session 8, inbox → queue → LIMS):
