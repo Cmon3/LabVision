@@ -45,6 +45,14 @@ Summary (Oct 29 long session 2, accuracy+characterization):
 | 2026-10-31 | S4 Step 6: Muse wording per group (constrained vocab) | labvision/describe.py per-group contact sheet (≤6 crops) + feature summary → Muse → validated color/shape/margin/elevation/surface; agent+app use Python grouping + Muse wording; tests/test_describe.py 4 passed (57 total). |
 
 ---
+Summary (Oct 31 Session 3, morphotypes + fixes):
+- Done: S3 Step 0-4: default prompt fix, plate px via HoughCircles, batch all colonies, morphotype grouping (morphology+terciles), bench ARI/purity/flag, agent+app tables (43 tests green).
+- Blocked: ARI 0.01 / purity 37.9% — morphology overlap + size terciles over-split pure plates (flag 20%); 5270 plate partial refusal (logged); dense plate 518 undercount unresolved.
+- Numbers: AGAR MAE 17.7 (test 20), BBBC w1 5.48 w2 18.95; morphotypes 351 crops/20 plates ARI 0.01 purity 37.9% flag 4/20; 43 pytest passed.
+- Cost: 0 new SAM this session (cached), ~35 Muse vision calls ~$0.08 (total ~$1.9 cum under $60+$20 caps, <300 SAM images).
+- Next: polish app (overlay toggle, CSV), README results table, video script (Nov 1-4 buffer).
+
+---
 Summary (Oct 31 Session 4, measured features + honest grouping):
 - Done: honest findings (ARI random, flag 20%<90% baseline), features.py (Lab bg-sub, circularity, log diam, texture), morphotypes.py (fixed global scales, avg linkage T=2.5 cw=2.0, small merge), tuning dev 69%→test 80%/90% baseline, flag removed, Muse per-group wording (constrained vocab).
 - Blocked: Python features ARI ~0, flag not beating baseline, contamination recall 0/1; n=20 test plates is small; no new SAM needed.
@@ -59,11 +67,3 @@ Summary (Nov 3 Session 5, ship it):
 - Numbers: 65 pytest passed; AGAR 11.8% mean error 7/20 exact, BBBC w1 5.48 w2 18.95; morphotypes flag 80% vs 90% baseline (removed).
 - Cost: 0 new SAM (≤250 used, cached), voice $0.18/h billed per sec; total well under $60 SAM + $20 Muse caps.
 - Next: submit by Nov 4 17:00 Barcelona, X post with link, archive video.
-
----
-Summary (Oct 31 Session 3, morphotypes + fixes):
-- Done: S3 Step 0-4: default prompt fix, plate px via HoughCircles, batch all colonies, morphotype grouping (morphology+terciles), bench ARI/purity/flag, agent+app tables (43 tests green).
-- Blocked: ARI 0.01 / purity 37.9% — morphology overlap + size terciles over-split pure plates (flag 20%); 5270 plate partial refusal (logged); dense plate 518 undercount unresolved.
-- Numbers: AGAR MAE 17.7 (test 20), BBBC w1 5.48 w2 18.95; morphotypes 351 crops/20 plates ARI 0.01 purity 37.9% flag 4/20; 43 pytest passed.
-- Cost: 0 new SAM this session (cached), ~35 Muse vision calls ~$0.08 (total ~$1.9 cum under $60+$20 caps, <300 SAM images).
-- Next: polish app (overlay toggle, CSV), README results table, video script (Nov 1-4 buffer).

@@ -77,8 +77,8 @@ Only public or synthetic data is used. No images are committed to the repository
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # fill META_API_KEY, BASETEN_API_KEY, BASETEN_BASE_URL
-# SAM 3.1 uses META_API_KEY; Muse Spark Open + Voice use BASETEN_*
+cp .env.example .env  # fill META_API_KEY (SAM 3.1 + Voice) and BASETEN_API_KEY/BASETEN_BASE_URL (Muse Spark Open)
+# SAM 3.1 + Voice Transcribe use META_API_KEY; Muse Spark Open uses BASETEN_*
 python app.py                  # → http://127.0.0.1:7860
 python bench/run_bench.py      # counts vs ground truth (uses cache if present)
 python bench/run_morphotypes_v2.py  # morphotype benchmark (GT boxes, no SAM)
