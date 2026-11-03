@@ -151,6 +151,11 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
     qc_result: dict | None = None
     rephoto_reason: str | None = None
     char_results: list[dict] = []
+    # verification trace (for app "How it was verified")
+    prompt_used: str | None = None
+    retry_used: bool = False
+    plate_diameter_px: float | None = None
+    plate_detected: bool = False
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": f"Image: {image_path.name}\nRequest: {request}\nUse tools to answer."},
@@ -193,8 +198,10 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                             if alt and alt != prompt:
                                 seg_result = segment(img_bytes, alt)
                                 prompt = alt
+                                retry_used = True
                         except Exception:
                             pass
+                    prompt_used = prompt
                     masks = seg_result.decoded_masks()
                     result = {"count": len(seg_result.boxes), "width": seg_result.width, "height": seg_result.height, "masks": int(masks.shape[0]), "prompt_used": prompt}
                 elif fname == "measure":
@@ -212,9 +219,12 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                         if _plate_px_val:
                             rows = measure_mod.measure_masks(masks, plate_diameter_px=_plate_px_val, plate_diameter_mm=90.0)
                             _plate_info = {"plate_detected": True, "plate_diameter_px": _plate_px_val}
+                            plate_diameter_px = _plate_px_val
+                            plate_detected = True
                         else:
                             rows = measure_mod.measure_masks(masks)
                             _plate_info = {"plate_detected": False}
+                            plate_detected = False
                         if "min_diameter_mm" in args:
                             if rows and "diameter_mm" in rows[0]:
                                 rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
@@ -405,6 +415,19 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         char_section=char_section,
     )
 
+    # verification payload for app
+    mm_per_px = (90.0 / plate_diameter_px) if plate_diameter_px else None
+    verification = {
+        "qc": qc_result,
+        "prompt_used": prompt_used,
+        "retry_used": retry_used,
+        "plate_diameter_px": plate_diameter_px,
+        "plate_detected": plate_detected,
+        "mm_per_px": mm_per_px,
+        "tntc": count > 300,
+        "count": count,
+        "seg_boxes": len(seg_result.boxes) if seg_result else 0,
+    }
     return {
         "report": report,
         "count": count,
@@ -413,4 +436,5 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         "rephoto_reason": rephoto_reason,
         "assistant_note": locals().get("assistant_note", ""),
         "seg": {"boxes": len(seg_result.boxes) if seg_result else 0, "width": seg_result.width if seg_result else 0, "height": seg_result.height if seg_result else 0},
+        "verification": verification,
     }
