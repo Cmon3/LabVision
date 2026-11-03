@@ -386,8 +386,15 @@ function drawViewer(){
     ctx.globalAlpha=1;
   }
   if(boxesToggle.checked && lastResult.boxes){
-    ctx.strokeStyle="#1F6F6A"; ctx.lineWidth=Math.max(1, Math.round(w/700));
-    for(const b of lastResult.boxes){
+    for(let i=0;i<lastResult.boxes.length;i++){
+      const b=lastResult.boxes[i];
+      if(hoveredIdx===i && correctMode==="remove"){
+        ctx.strokeStyle="#C8892B"; ctx.lineWidth=Math.max(2, Math.round(w/500));
+        ctx.fillStyle="rgba(200,137,43,0.15)";
+        ctx.fillRect(b.x1, b.y1, b.x2-b.x1, b.y2-b.y1);
+      } else {
+        ctx.strokeStyle="#1F6F6A"; ctx.lineWidth=Math.max(1, Math.round(w/700));
+      }
       ctx.strokeRect(b.x1, b.y1, b.x2-b.x1, b.y2-b.y1);
     }
   }
@@ -401,48 +408,172 @@ masksToggle.addEventListener("change", drawViewer);
 boxesToggle.addEventListener("change", drawViewer);
 window.addEventListener("resize", ()=>{ if(lastResult) drawViewer(); });
 
-// click-to-correct: scale client coords to image coords
-function getClickCoords(e){
+function showToast(msg){
+  const t=document.getElementById("toast");
+  if(!t) return;
+  t.textContent=msg; t.hidden=false;
+  clearTimeout(t._timer);
+  t._timer=setTimeout(()=>{ t.hidden=true; }, 4000);
+}
+
+// cursor mode
+function updateCursorMode(){
+  const wrap=document.getElementById("canvasWrap");
+  if(!wrap) return;
+  wrap.classList.remove("mode-add","mode-remove");
+  wrap.classList.add(correctMode==="add"?"mode-add":"mode-remove");
+}
+updateCursorMode();
+
+function getImageCoords(clientX, clientY){
   const rect = viewer.getBoundingClientRect();
   const w = lastResult.image_w, h = lastResult.image_h;
-  const x = (e.clientX - rect.left) * w / rect.width;
-  const y = (e.clientY - rect.top) * h / rect.height;
-  return {x: Math.floor(Math.max(0, Math.min(w-1, x))), y: Math.floor(Math.max(0, Math.min(h-1, y)))};
+  const x = (clientX - rect.left) * w / rect.width;
+  const y = (clientY - rect.top) * h / rect.height;
+  return {x: Math.floor(Math.max(0, Math.min(w-1, x))), y: Math.floor(Math.max(0, Math.min(h-1, y))), rect};
 }
-viewer.addEventListener("click", async (e)=>{
+let isDragging=false, dragStart=null, dragCurrent=null, hoveredIdx=null;
+const dragOverlay=document.getElementById("dragOverlay");
+function drawDragRect(){
+  if(!dragOverlay || !dragStart || !dragCurrent || !lastResult) return;
+  const rect=viewer.getBoundingClientRect();
+  const scaleX=rect.width / lastResult.image_w, scaleY=rect.height / lastResult.image_h;
+  // convert image coords to canvas display coords
+  const x1=Math.min(dragStart.x, dragCurrent.x)*scaleX, y1=Math.min(dragStart.y, dragCurrent.y)*scaleY;
+  const x2=Math.max(dragStart.x, dragCurrent.x)*scaleX, y2=Math.max(dragStart.y, dragCurrent.y)*scaleY;
+  const c=dragOverlay.getContext("2d");
+  dragOverlay.width=rect.width; dragOverlay.height=rect.height;
+  c.clearRect(0,0,rect.width,rect.height);
+  c.strokeStyle="#1F6F6A"; c.lineWidth=2; c.setLineDash([6,4]);
+  c.strokeRect(x1,y1,x2-x1,y2-y1);
+  c.fillStyle="rgba(31,111,106,0.15)"; c.fillRect(x1,y1,x2-x1,y2-y1);
+}
+function clearDragRect(){
+  if(!dragOverlay) return;
+  const c=dragOverlay.getContext("2d");
+  c.clearRect(0,0,dragOverlay.width,dragOverlay.height);
+}
+function findBoxAtImage(x,y){
+  if(!lastResult || !lastResult.boxes) return null;
+  for(let i=0;i<lastResult.boxes.length;i++){
+    const b=lastResult.boxes[i];
+    if(b.x1<=x && x<=b.x2 && b.y1<=y && y<=b.y2) return i;
+  }
+  return null;
+}
+viewer.addEventListener("mousedown", (e)=>{
   if(!lastResult || !lastResult.run_id) return;
-  const {x,y}=getClickCoords(e);
-  lastResult._lastClick={x,y}; drawViewer();
-  clickSpinner.hidden=false;
-  try{
-    const r=await fetch("/api/correct", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({run_id:lastResult.run_id, x,y, mode:correctMode})});
-    if(!r.ok){
-      let j={}; try{ j=await r.json(); }catch(_){}
-      throw new Error((j.detail&&j.detail.error)||j.error||("HTTP "+r.status));
-    }
-    const data=await r.json();
-    lastResult.count = data.count; lastResult.count_label = data.count_label; lastResult.boxes = data.boxes;
-    if(data.status) lastResult.status = data.status;
-    if(data.measurements) lastResult.measurements = data.measurements;
-    if(data.correction) lastResult._lastCorrection = data.correction;
-    countBig.textContent = data.count_label || data.count+" CFU";
-    statusPill.textContent = (data.status==="tntc"?"TNTC — dilute & re-plate":data.status||"ok");
-    statusPill.className="pill "+pillClass(data.status);
-    renderMeasurements(data.measurements||[], data.csv_url||lastResult.csv_url);
-    if(lastResult.masks_url) masksEl=null;
-    const bust = "?t="+Date.now();
-    if(masksToggle.checked){
-      masksEl = new Image(); masksEl.crossOrigin="anonymous";
-      masksEl.onload=drawViewer; masksEl.src = lastResult.masks_url + bust;
-    }
-    drawViewer();
-  }catch(err){
-    setLeftStatus(err.message.slice(0,120));
-  }finally{ clickSpinner.hidden=true; }
+  if(correctMode!=="add") return;
+  const p=getImageCoords(e.clientX, e.clientY);
+  isDragging=true; dragStart={x:p.x,y:p.y}; dragCurrent={x:p.x,y:p.y};
 });
+viewer.addEventListener("mousemove", (e)=>{
+  if(!lastResult || !lastResult.run_id) return;
+  const p=getImageCoords(e.clientX, e.clientY);
+  if(isDragging && correctMode==="add"){
+    dragCurrent={x:p.x,y:p.y};
+    drawDragRect();
+  } else if(correctMode==="remove"){
+    const idx=findBoxAtImage(p.x,p.y);
+    if(idx!==hoveredIdx){
+      hoveredIdx=idx;
+      drawViewer();
+    }
+  }
+});
+viewer.addEventListener("mouseup", async (e)=>{
+  if(!lastResult || !lastResult.run_id) return;
+  if(correctMode==="add" && isDragging){
+    isDragging=false;
+    const p=getImageCoords(e.clientX, e.clientY);
+    dragCurrent={x:p.x,y:p.y};
+    clearDragRect();
+    const x1=Math.min(dragStart.x, dragCurrent.x), y1=Math.min(dragStart.y, dragCurrent.y);
+    const x2=Math.max(dragStart.x, dragCurrent.x), y2=Math.max(dragStart.y, dragCurrent.y);
+    const dist=Math.max(Math.abs(x2-x1), Math.abs(y2-y1));
+    let payload;
+    if(dist < 6){
+      payload={run_id:lastResult.run_id, x:Math.floor((x1+x2)/2), y:Math.floor((y1+y2)/2), mode:"add"};
+    } else {
+      // clamp inclusive
+      const w=lastResult.image_w, h=lastResult.image_h;
+      payload={run_id:lastResult.run_id, x1:Math.max(0,Math.min(w-1,x1)), y1:Math.max(0,Math.min(h-1,y1)), x2:Math.max(0,Math.min(w-1,x2)), y2:Math.max(0,Math.min(h-1,y2)), mode:"add"};
+    }
+    dragStart=null; dragCurrent=null;
+    lastResult._lastClick={x:payload.x||payload.x1, y:payload.y||payload.y1}; drawViewer();
+    clickSpinner.hidden=false;
+    try{
+      const r=await fetch("/api/correct", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
+      if(!r.ok){
+        let j={}; try{ j=await r.json(); }catch(_){}
+        const msg=(j.detail&&j.detail.error)||j.error||("HTTP "+r.status);
+        const hint=(j.detail&&j.detail.hint)||j.hint||"";
+        throw new Error(msg + (hint?" — "+hint:""));
+      }
+      const data=await r.json();
+      lastResult.count = data.count; lastResult.count_label = data.count_label; lastResult.boxes = data.boxes;
+      if(data.status) lastResult.status = data.status;
+      if(data.measurements) lastResult.measurements = data.measurements;
+      if(data.correction) lastResult._lastCorrection = data.correction;
+      countBig.textContent = data.count_label || data.count+" CFU";
+      statusPill.textContent = (data.status==="tntc"?"TNTC — dilute & re-plate":data.status||"ok");
+      statusPill.className="pill "+pillClass(data.status);
+      renderMeasurements(data.measurements||[], data.csv_url||lastResult.csv_url);
+      if(lastResult.masks_url) masksEl=null;
+      const bust = "?t="+Date.now();
+      if(masksToggle.checked){
+        masksEl = new Image(); masksEl.crossOrigin="anonymous";
+        masksEl.onload=drawViewer; masksEl.src = lastResult.masks_url + bust;
+      }
+      drawViewer();
+      showToast("Added colony — count updated");
+    }catch(err){
+      const msg=err.message.slice(0,200);
+      setLeftStatus(msg); showToast(msg);
+    }finally{ clickSpinner.hidden=true; }
+    return;
+  }
+  if(correctMode==="remove" && !isDragging){
+    // click to remove
+    const {x,y}=getImageCoords(e.clientX, e.clientY);
+    lastResult._lastClick={x,y}; drawViewer();
+    clickSpinner.hidden=false;
+    try{
+      const r=await fetch("/api/correct", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({run_id:lastResult.run_id, x,y, mode:"remove"})});
+      if(!r.ok){
+        let j={}; try{ j=await r.json(); }catch(_){}
+        const msg=(j.detail&&j.detail.error)||j.error||("HTTP "+r.status);
+        const hint=(j.detail&&j.detail.hint)||j.hint||"";
+        throw new Error(msg + (hint?" — "+hint:""));
+      }
+      const data=await r.json();
+      lastResult.count = data.count; lastResult.count_label = data.count_label; lastResult.boxes = data.boxes;
+      if(data.status) lastResult.status = data.status;
+      if(data.measurements) lastResult.measurements = data.measurements;
+      if(data.correction) lastResult._lastCorrection = data.correction;
+      countBig.textContent = data.count_label || data.count+" CFU";
+      statusPill.textContent = (data.status==="tntc"?"TNTC — dilute & re-plate":data.status||"ok");
+      statusPill.className="pill "+pillClass(data.status);
+      renderMeasurements(data.measurements||[], data.csv_url||lastResult.csv_url);
+      if(lastResult.masks_url) masksEl=null;
+      const bust = "?t="+Date.now();
+      if(masksToggle.checked){
+        masksEl = new Image(); masksEl.crossOrigin="anonymous";
+        masksEl.onload=drawViewer; masksEl.src = lastResult.masks_url + bust;
+      }
+      drawViewer();
+      showToast("Removed colony — count updated");
+    }catch(err){
+      const msg=err.message.slice(0,200);
+      setLeftStatus(msg); showToast(msg);
+    }finally{ clickSpinner.hidden=true; }
+  }
+  isDragging=false; clearDragRect();
+});
+viewer.addEventListener("mouseleave", ()=>{ isDragging=false; clearDragRect(); hoveredIdx=null; drawViewer(); });
 
-modeAdd.addEventListener("click", ()=>{ correctMode="add"; modeAdd.classList.add("is-active"); modeRemove.classList.remove("is-active"); });
-modeRemove.addEventListener("click", ()=>{ correctMode="remove"; modeRemove.classList.add("is-active"); modeAdd.classList.remove("is-active"); });
+modeAdd.addEventListener("click", ()=>{ correctMode="add"; modeAdd.classList.add("is-active"); modeRemove.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+modeRemove.addEventListener("click", ()=>{ correctMode="remove"; modeRemove.classList.add("is-active"); modeAdd.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
 
 document.querySelectorAll(".tab").forEach(btn=>{
   btn.addEventListener("click", ()=>{

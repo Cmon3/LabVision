@@ -106,9 +106,11 @@
 
       <div id="canvasWrap" class="canvas-wrap">
         <canvas id="viewer"></canvas>
+        <canvas id="dragOverlay" width="0" height="0" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;"></canvas>
         <div id="clickSpinner" class="click-spinner" hidden></div>
       </div>
       <p class="muted small">Click on the image to add or remove a detection. Coordinates are scaled to the original image.</p>
+      <div id="toast" hidden></div>
 
       <div class="tabs" role="tablist">
         <button role="tab" aria-selected="true" data-tab="verify" class="tab is-active">How it was verified</button>

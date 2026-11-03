@@ -104,8 +104,14 @@ a{color:var(--teal)}
 .viewer-toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:12px 0}
 .chk{font-size:.85rem; display:flex; gap:6px; align-items:center; cursor:pointer}
 .canvas-wrap{position:relative; background:var(--bg); border:1px solid var(--line); border-radius:8px; overflow:hidden; min-height:200px; display:flex; align-items:center; justify-content:center}
-.canvas-wrap canvas{max-width:100%; height:auto; display:block; cursor:crosshair}
+.canvas-wrap canvas{max-width:100%; height:auto; display:block}
+.canvas-wrap.mode-add{cursor:crosshair}
+.canvas-wrap.mode-remove{cursor:pointer}
+.canvas-wrap canvas#viewer{cursor:inherit}
+#dragOverlay{pointer-events:none}
 .click-spinner{position:absolute; width:22px; height:22px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite}
+#toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:8px; font-size:.88rem; box-shadow:var(--shadow); z-index:100; max-width:90vw}
+#toast[hidden]{display:none !important}
 
 /* tabs */
 .tabs{display:flex; gap:6px; border-bottom:1px solid var(--line); margin-top:14px; overflow-x:auto}

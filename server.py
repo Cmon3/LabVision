@@ -75,20 +75,22 @@ def _count_label(count: int) -> str:
     return "TNTC >300" if count > 300 else f"{count} CFU"
 
 
-def _masks_png(masks: np.ndarray, w: int, h: int) -> bytes:
-    # transparent PNG where masks are red with alpha
+def _masks_png(masks: np.ndarray, w: int, h: int, human_idx: set[int] | None = None) -> bytes:
+    # transparent PNG where masks are red with alpha, human edits in teal
     from io import BytesIO
     if masks is None or masks.size == 0:
         im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     else:
         im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        for m in masks:
+        human_idx = human_idx or set()
+        for i, m in enumerate(masks):
             if m.shape[0] != h or m.shape[1] != w:
                 continue
-            red = Image.new("RGBA", (w, h), (255, 0, 0, 100))
+            col = (31, 111, 106, 130) if i in human_idx else (255, 0, 0, 100)
+            overlay = Image.new("RGBA", (w, h), col)
             mask_im = Image.fromarray((m.astype(np.uint8) * 255))
             tmp = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            tmp.paste(red, mask=mask_im)
+            tmp.paste(overlay, mask=mask_im)
             im = Image.alpha_composite(im, tmp)
     buf = BytesIO()
     im.save(buf, format="PNG")
@@ -151,10 +153,19 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     rdir.mkdir(parents=True, exist_ok=True)
 
     img_path = rdir / "image.png"
-    img_path.write_bytes(image_bytes)
-    from PIL import Image as _Im
+    # save as real PNG (not JPEG bytes with .png name)
+    try:
+        from PIL import Image as _Im2
+        import io as _io2
 
-    pil = _Im.open(img_path).convert("RGB")
+        _pil_tmp = _Im2.open(_io2.BytesIO(image_bytes)).convert("RGB")
+        _pil_tmp.save(img_path, format="PNG")
+        pil = _pil_tmp
+    except Exception:
+        img_path.write_bytes(image_bytes)
+        from PIL import Image as _Im
+
+        pil = _Im.open(img_path).convert("RGB")
     arr = np.array(pil)
     w, h = pil.size
 
@@ -248,6 +259,11 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
 
     masks_png = _masks_png(masks, w, h)
     (rdir / "masks.png").write_bytes(masks_png)
+    # save masks for click-to-correct
+    try:
+        np.save(rdir / "masks.npy", masks)
+    except Exception:
+        pass
 
     csv_path = rdir / "results.csv"
     if rows:
@@ -305,7 +321,14 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
         rdir = RUNS_DIR / run_id
         rdir.mkdir(parents=True, exist_ok=True)
         img_path = rdir / "image.png"
-        img_path.write_bytes(data)
+        try:
+            from PIL import Image as _Im3
+            import io as _io3
+
+            _pil3 = _Im3.open(_io3.BytesIO(data)).convert("RGB")
+            _pil3.save(img_path, format="PNG")
+        except Exception:
+            img_path.write_bytes(data)
 
         # queue for events from agent thread
         q: asyncio.Queue = asyncio.Queue()
@@ -487,11 +510,21 @@ async def api_analyze(image: UploadFile = File(...), request: str = Form("")):
 @app.post("/api/correct")
 async def api_correct(payload: dict):
     run_id = payload.get("run_id")
+    mode = payload.get("mode", "add")
+    # support both point (x,y) and box (x1,y1,x2,y2)
     x = payload.get("x")
     y = payload.get("y")
-    mode = payload.get("mode", "add")
-    if not run_id or x is None or y is None:
-        raise HTTPException(status_code=400, detail={"error": "missing run_id/x/y", "hint": "Send {run_id, x, y, mode: add|remove}"})
+    x1 = payload.get("x1")
+    y1 = payload.get("y1")
+    x2 = payload.get("x2")
+    y2 = payload.get("y2")
+    if not run_id:
+        raise HTTPException(status_code=400, detail={"error": "missing run_id", "hint": "Send {run_id, x, y, mode: add|remove} or {run_id, x1,y1,x2,y2}"})
+    if mode == "add" and x1 is not None and y1 is not None and x2 is not None and y2 is not None:
+        # box prompt
+        pass
+    elif x is None or y is None:
+        raise HTTPException(status_code=400, detail={"error": "missing x/y", "hint": "Send {run_id, x, y, mode: add|remove} or {run_id, x1,y1,x2,y2}"})
     rdir = RUNS_DIR / run_id
     if not rdir.exists():
         raise HTTPException(status_code=404, detail={"error": "run not found", "hint": f"No run {run_id}"})
@@ -500,46 +533,169 @@ async def api_correct(payload: dict):
         raise HTTPException(status_code=404, detail={"error": "image not found"})
     boxes_path = rdir / "boxes.json"
     boxes = json.loads(boxes_path.read_text()) if boxes_path.exists() else []
+    masks_path = rdir / "masks.npy"
     from PIL import Image as _Im
     pil = _Im.open(img_path).convert("RGB")
     w, h = pil.size
-    x = max(0, min(w - 1, int(x)))
-    y = max(0, min(h - 1, int(y)))
+
+    # clamp helper
+    def _clamp(v, lo, hi):
+        return max(lo, min(hi, int(v)))
+
+    human_idx: set[int] = set()
+    # load existing masks if available
+    existing_masks = None
+    if masks_path.exists():
+        try:
+            existing_masks = np.load(masks_path)
+            # ensure shape matches current boxes if possible
+            if existing_masks.shape[0] != len(boxes):
+                existing_masks = None
+        except Exception:
+            existing_masks = None
 
     if mode == "remove":
-        keep = []
+        if x is None or y is None:
+            raise HTTPException(status_code=400, detail={"error": "missing x/y for remove", "hint": "Send x,y for point to remove"})
+        x = _clamp(x, 0, w - 1)
+        y = _clamp(y, 0, h - 1)
+        keep_boxes = []
+        keep_masks_list = []
         removed = None
-        for b in boxes:
+        removed_idx = None
+        for i, b in enumerate(boxes):
             if b["x1"] <= x <= b["x2"] and b["y1"] <= y <= b["y2"]:
                 if removed is None:
                     removed = b
+                    removed_idx = i
                     continue
-            keep.append(b)
+            keep_boxes.append(b)
+            if existing_masks is not None and i < existing_masks.shape[0]:
+                keep_masks_list.append(existing_masks[i])
         if removed is None:
             raise HTTPException(status_code=400, detail={"error": "no colony at click", "hint": f"No detection contains ({x},{y})"})
-        boxes = keep
+        boxes = keep_boxes
+        # rebuild masks array for keep
+        if keep_masks_list:
+            masks = np.stack(keep_masks_list) if keep_masks_list else np.zeros((0, h, w), dtype=bool)
+        else:
+            # fallback to rectangular
+            masks = np.zeros((len(boxes), h, w), dtype=bool)
+            for i, b in enumerate(boxes):
+                x1c, y1c, x2c, y2c = max(0, b["x1"]), max(0, b["y1"]), min(w, b["x2"]), min(h, b["y2"])
+                masks[i, y1c:y2c, x1c:x2c] = True
+        # if we had human tracking, need to adjust indices
         action = {"action": "remove", "x": x, "y": y, "box": removed}
     else:
+        # add: point or box
         data = img_path.read_bytes()
         try:
-            seg = segment_point(data, x, y)
+            if x1 is not None and y1 is not None and x2 is not None and y2 is not None:
+                # box prompt: clamp and ensure x2/y2 inclusive
+                x1c = _clamp(min(x1, x2), 0, w - 1)
+                y1c = _clamp(min(y1, y2), 0, h - 1)
+                x2c = _clamp(max(x1, x2), 0, w - 1)
+                y2c = _clamp(max(y1, y2), 0, h - 1)
+                # if drag <6px, treat as point
+                if max(abs(x2c - x1c), abs(y2c - y1c)) < 6:
+                    seg = segment_point(data, x1c, y1c)
+                else:
+                    seg = segment_point(data, x1c, y1c, x2c, y2c)
+                action = {"action": "add", "x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c}
+            else:
+                x = _clamp(x, 0, w - 1)
+                y = _clamp(y, 0, h - 1)
+                seg = segment_point(data, x, y)
+                action = {"action": "add", "x": x, "y": y}
             if not seg.boxes:
-                raise HTTPException(status_code=502, detail={"error": "SAM returned no mask", "hint": "Try nearby point"})
-            b = seg.boxes[0]
-            boxes.append({"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2})
-            action = {"action": "add", "x": x, "y": y, "box": {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}}
+                # fallback: create simple mask from input (SAM found nothing, but human edit should still count)
+                if x1 is not None and y1 is not None and x2 is not None and y2 is not None and max(abs(x2 - x1), abs(y2 - y1)) >= 6:
+                    # use dragged box as fallback
+                    x1c = max(0, min(x1, x2))
+                    y1c = max(0, min(y1, y2))
+                    x2c = min(w, max(x1, x2))
+                    y2c = min(h, max(y1, y2))
+                    # inclusive -> exclusive for storage, but keep as provided
+                    new_box = {"x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c}
+                    # create rectangular mask for fallback
+                    new_mask = np.zeros((h, w), dtype=bool)
+                    new_mask[y1c:y2c, x1c:x2c] = True
+                else:
+                    # point fallback: small 20x20 box with circular mask
+                    cx = x if x is not None else x1
+                    cy = y if y is not None else y1
+                    cx = _clamp(cx, 0, w - 1)
+                    cy = _clamp(cy, 0, h - 1)
+                    x1c = max(0, cx - 10)
+                    y1c = max(0, cy - 10)
+                    x2c = min(w, cx + 10)
+                    y2c = min(h, cy + 10)
+                    new_box = {"x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c}
+                    new_mask = np.zeros((h, w), dtype=bool)
+                    # circular mask
+                    yy, xx = np.ogrid[y1c:y2c, x1c:x2c]
+                    cy_c = (y1c + y2c) / 2
+                    cx_c = (x1c + x2c) / 2
+                    r = min((x2c - x1c), (y2c - y1c)) / 2 * 0.8
+                    new_mask[y1c:y2c, x1c:x2c] = (xx - cx_c) ** 2 + (yy - cy_c) ** 2 <= r**2
+                boxes.append(new_box)
+                # build masks array with fallback
+                if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
+                    masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
+                elif existing_masks is not None and len(boxes) == 1:
+                    masks = new_mask[None, ...]
+                else:
+                    masks = np.zeros((len(boxes), h, w), dtype=bool)
+                    for i, bb in enumerate(boxes[:-1]):
+                        x1cc, y1cc, x2cc, y2cc = max(0, bb["x1"]), max(0, bb["y1"]), min(w, bb["x2"]), min(h, bb["y2"])
+                        masks[i, y1cc:y2cc, x1cc:x2cc] = True
+                    masks[-1] = new_mask
+                human_idx = {len(boxes) - 1}
+                action["box"] = new_box
+                # don't treat as error; human edit succeeds with fallback
+            else:
+                b = seg.boxes[0]
+                new_box = {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
+                boxes.append(new_box)
+                # get new mask
+                new_masks = seg.decoded_masks()
+                new_mask = new_masks[0] if new_masks.shape[0] else np.zeros((h, w), dtype=bool)
+                # ensure new_mask is full size (it should be)
+                if new_mask.shape != (h, w):
+                    # if it's box-sized, place it (fallback)
+                    tmp = np.zeros((h, w), dtype=bool)
+                    bh = b.y2 - b.y1
+                    bw = b.x2 - b.x1
+                    if new_mask.shape == (bh, bw):
+                        tmp[b.y1:b.y2, b.x1:b.x2] = new_mask
+                        new_mask = tmp
+                # build masks array
+                if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
+                    masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
+                elif existing_masks is not None and len(boxes) == 1:
+                    masks = new_mask[None, ...]
+                else:
+                    # fallback: build from boxes as rect, but replace last with real
+                    masks = np.zeros((len(boxes), h, w), dtype=bool)
+                    for i, bb in enumerate(boxes[:-1]):
+                        x1c, y1c, x2c, y2c = max(0, bb["x1"]), max(0, bb["y1"]), min(w, bb["x2"]), min(h, bb["y2"])
+                        masks[i, y1c:y2c, x1c:x2c] = True
+                    masks[-1] = new_mask
+                human_idx = {len(boxes) - 1}
+                action["box"] = new_box
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=502, detail={"error": str(e)[:300], "hint": "SAM add failed"})
 
     boxes_path.write_text(json.dumps(boxes))
-    # boxes as rectangular masks for re-measure
+    # save masks for future edits
+    try:
+        np.save(masks_path, masks)
+    except Exception:
+        pass
+    # re-measure using real masks
     arr = np.array(pil)
-    masks = np.zeros((len(boxes), h, w), dtype=bool)
-    for i, b in enumerate(boxes):
-        x1, y1, x2, y2 = max(0, b["x1"]), max(0, b["y1"]), min(w, b["x2"]), min(h, b["y2"])
-        masks[i, y1:y2, x1:x2] = True
     try:
         from labvision.plate import detect_plate_diameter_px
         pdiam = detect_plate_diameter_px(np.array(pil))
@@ -550,7 +706,7 @@ async def api_correct(payload: dict):
     else:
         rows = measure_mod.measure_masks(masks)
 
-    (rdir / "masks.png").write_bytes(_masks_png(masks, w, h))
+    (rdir / "masks.png").write_bytes(_masks_png(masks, w, h, human_idx=human_idx))
     csv_path = rdir / "results.csv"
     if rows:
         with csv_path.open("w", newline="") as f:
