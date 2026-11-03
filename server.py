@@ -25,25 +25,21 @@ WEB_DIR = Path("web")
 
 app = FastAPI(title="LabVision Copilot API")
 
-# serve web frontend if present (at /web and also at /)
 if WEB_DIR.exists():
     app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
-    # serve index.html at / and static assets via / fallback
+
     @app.get("/")
     def _index():
         return FileResponse(str(WEB_DIR / "index.html"), media_type="text/html")
 
-    @app.get("/api/examples/file")
+    @app.api_route("/api/examples/file", methods=["GET", "HEAD"])
     def _example_file(path: str):
-        # allowed only under data/ to avoid traversal
+        # only serve files inside data/
         p = Path(path)
-        # resolve relative to repo root
         if not p.exists():
-            # try without leading /
             p = Path(path.lstrip("/"))
         if not p.exists() or "data" not in str(p.resolve()):
             raise HTTPException(status_code=404, detail="not found")
-        # guard: must be inside data/
         try:
             p.resolve().relative_to(Path("data").resolve())
         except Exception:
@@ -125,12 +121,9 @@ def _colony_types_from_request(image_arr, boxes, masks, request: str) -> list[di
             g_feats = feats[g_mask]
             mean_log = float(g_feats[:, 4].mean()) if g_feats.size else 0
             mean_diam = float(np.exp(mean_log)) if mean_log else 0
-            # Muse wording per group (best effort, fallback)
             desc_str = "cream, circular, entire margin, convex, smooth"
             try:
                 from labvision.describe import describe_group as _desc
-                # need image path for describe — we don't have it here, use dummy
-                # fallback to feature-based description
                 pass
             except Exception:
                 pass
@@ -146,10 +139,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     rdir = RUNS_DIR / run_id
     rdir.mkdir(parents=True, exist_ok=True)
 
-    # save original image
     img_path = rdir / "image.png"
     img_path.write_bytes(image_bytes)
-    # load for qc
     from PIL import Image as _Im
 
     pil = _Im.open(img_path).convert("RGB")
@@ -160,7 +151,6 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     def _trace(name, status, **kv):
         trace.append({"name": name, "status": status, **kv})
 
-    # QC
     t = time.time()
     bv = qc_mod.laplacian_variance(arr)
     is_blurry = qc_mod.is_blurry(arr)
@@ -168,10 +158,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     glare_frac = qc_mod.saturated_fraction(arr)
     _trace("check_quality", "warn" if is_blurry or glare else "ok", blur_score=round(bv, 1), glare_fraction=round(glare_frac, 4), is_blurry=is_blurry, glare=glare, duration_ms=int((time.time()-t)*1000))
 
-    # segment
     t = time.time()
     prompt = request.strip() or AGAR_PROMPT
-    # if request is plain "count colonies", use default prompt
     seg_prompt = AGAR_PROMPT if "cell" not in request.lower() and "count" in request.lower() else prompt
     if "cell" in request.lower():
         seg_prompt = "cell"
@@ -191,7 +179,6 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         _trace("segment", "fail", error=str(e)[:200])
         raise HTTPException(status_code=502, detail={"error": "SAM segmentation failed", "hint": str(e)[:300]})
 
-    # measure
     t = time.time()
     try:
         from labvision.plate import detect_plate_diameter_px
@@ -204,7 +191,6 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     else:
         rows = measure_mod.measure_masks(masks)
         mm_per_px = None
-    # filter by request if mentions "larger than X mm"
     import re
     m = re.search(r"larger than\s+([\d.]+)\s*mm", request, re.I)
     if m and rows and "diameter_mm" in rows[0]:
@@ -218,7 +204,6 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     status = _status_for({"is_blurry": is_blurry, "glare": glare}, count)
     count_label = _count_label(count)
 
-    # report
     has_mm = bool(rows and "diameter_mm" in rows[0])
     if rows:
         ds = [r["diameter_px"] for r in rows]
@@ -228,11 +213,9 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         mean_d = mean_mm = 0
     report = f"Count: {count_label}\nMean diameter: {mean_d:.1f}px" + (f" ({mean_mm:.2f}mm)" if has_mm else "") + f"\n{count} objects — {'no plate, sizes in px' if not pdiam else 'plate 90mm'}"
 
-    # masks png
     masks_png = _masks_png(masks, w, h)
     (rdir / "masks.png").write_bytes(masks_png)
 
-    # csv
     csv_path = rdir / "results.csv"
     if rows:
         with csv_path.open("w", newline="") as f:
@@ -240,16 +223,13 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
             wtr.writeheader()
             wtr.writerows(rows)
 
-    # colony types
     colony_types = _colony_types_from_request(arr, seg.boxes, masks, request)
 
-    # runlog
     try:
         save_run(RUNS_DIR, run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam}, results=rows)
     except Exception:
         pass
 
-    # save boxes for correct
     (rdir / "boxes.json").write_text(json.dumps(_boxes_list(seg)))
 
     return {
@@ -281,7 +261,6 @@ async def api_analyze(image: UploadFile = File(...), request: str = Form("")):
     except HTTPException:
         raise
     except Exception as e:
-        # friendly error
         msg = str(e)
         hint = "Check API keys in .env and try again."
         if "META_API_KEY" in msg or "BASETEN" in msg:
@@ -305,9 +284,6 @@ async def api_correct(payload: dict):
         raise HTTPException(status_code=404, detail={"error": "image not found"})
     boxes_path = rdir / "boxes.json"
     boxes = json.loads(boxes_path.read_text()) if boxes_path.exists() else []
-    # load masks if exists
-    # we stored masks.png but need masks array — reconstruct from boxes? Instead reload from segment cache or just use boxes for remove
-    # For add: call segment_point
     from PIL import Image as _Im
     pil = _Im.open(img_path).convert("RGB")
     w, h = pil.size
@@ -315,7 +291,6 @@ async def api_correct(payload: dict):
     y = max(0, min(h - 1, int(y)))
 
     if mode == "remove":
-        # find box containing click
         keep = []
         removed = None
         for b in boxes:
@@ -325,12 +300,10 @@ async def api_correct(payload: dict):
                     continue
             keep.append(b)
         if removed is None:
-            # check masks png for hit? fallback: no removal
             raise HTTPException(status_code=400, detail={"error": "no colony at click", "hint": f"No detection contains ({x},{y})"})
         boxes = keep
         action = {"action": "remove", "x": x, "y": y, "box": removed}
     else:
-        # add via point prompt
         data = img_path.read_bytes()
         try:
             seg = segment_point(data, x, y)
@@ -344,19 +317,13 @@ async def api_correct(payload: dict):
         except Exception as e:
             raise HTTPException(status_code=502, detail={"error": str(e)[:300], "hint": "SAM add failed"})
 
-    # save updated boxes
     boxes_path.write_text(json.dumps(boxes))
-    # re-measure: need masks - we can approximate masks as boxes for now, or decode from segment_point masks
-    # For remove, we drop masks; for add, we need masks array — we have not stored masks array, but we can reconstitute via measure from boxes? Use box area as proxy
-    # Simpler: re-run measure from boxes as rectangular masks (conservative)
-    # Build masks from boxes as filled rectangles
+    # boxes as rectangular masks for re-measure
     arr = np.array(pil)
     masks = np.zeros((len(boxes), h, w), dtype=bool)
     for i, b in enumerate(boxes):
         x1, y1, x2, y2 = max(0, b["x1"]), max(0, b["y1"]), min(w, b["x2"]), min(h, b["y2"])
         masks[i, y1:y2, x1:x2] = True
-        # for add, we have real mask from segment_point — but we didn't save it; we will use rect as fallback
-    # re-measure
     try:
         from labvision.plate import detect_plate_diameter_px
         pdiam = detect_plate_diameter_px(np.array(pil))
@@ -367,9 +334,7 @@ async def api_correct(payload: dict):
     else:
         rows = measure_mod.measure_masks(masks)
 
-    # update masks.png
     (rdir / "masks.png").write_bytes(_masks_png(masks, w, h))
-    # update csv
     csv_path = rdir / "results.csv"
     if rows:
         with csv_path.open("w", newline="") as f:
@@ -377,7 +342,6 @@ async def api_correct(payload: dict):
             wtr.writeheader()
             wtr.writerows(rows)
 
-    # log correction
     try:
         save_run(RUNS_DIR, run_id, inputs={"correction": action}, model_ids={"sam": "sam-3.1"}, params={"mode": mode}, results=rows)
     except Exception:
@@ -405,10 +369,6 @@ async def api_transcribe(audio: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail={"error": "no audio", "hint": "Record or upload WAV."})
     try:
         from labvision.voice import transcribe
-        # audio is WAV bytes from browser (we encode mono 24k in JS, but accept anything)
-        # write to temp and transcribe
-        import tempfile, os
-        # voice.py handles bytes directly if we pass bytes
         text = transcribe(data)
         return {"transcript": text}
     except Exception as e:

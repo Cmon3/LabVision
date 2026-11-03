@@ -1,4 +1,3 @@
-// LabVision Copilot — vanilla JS, no build step
 const $ = s => document.querySelector(s);
 const fileInput = $("#fileInput"), dropzone = $("#dropzone"), previewThumb = $("#previewThumb");
 const runBtn = $("#runBtn"), requestInput = $("#requestInput"), leftStatus = $("#leftStatus");
@@ -12,13 +11,12 @@ const modeAdd = $("#modeAdd"), modeRemove = $("#modeRemove");
 const traceList = $("#traceList"), measureTable = $("#measureTable"), csvLink = $("#csvLink"), colonyTypesEl = $("#colonyTypes"), reportText = $("#reportText");
 const cameraBtn = $("#cameraBtn"), cameraWrap = $("#cameraWrap"), cameraVideo = $("#cameraVideo"), cameraCanvas = $("#cameraCanvas"), cameraCaptureBtn = $("#cameraCaptureBtn"), cameraCancelBtn = $("#cameraCancelBtn");
 
-let selectedFile = null; // Blob
-let lastResult = null;   // /api/analyze JSON
+let selectedFile = null;
+let lastResult = null;
 let correctMode = "add";
-let imageEl = null, masksEl = null; // HTMLImage for canvas draw
+let imageEl = null, masksEl = null;
 let ctx = viewer.getContext("2d");
 
-// ---------- helpers
 function showState(which){
   emptyState.hidden = which!=="empty";
   loadingState.hidden = which!=="loading";
@@ -36,16 +34,13 @@ function pillClass(status){
 }
 function isTNTC(status, count){ return status==="tntc" || count>300; }
 
-// ---------- file handling
 function setFile(blob, name){
   selectedFile = blob;
   selectedFile._name = name || "image.jpg";
-  // preview
   const url = URL.createObjectURL(blob);
   previewThumb.src = url;
   previewThumb.hidden = false;
   dropzone.querySelector(".dz-text").textContent = name || "Image selected";
-  // hide camera if open
   stopCamera();
 }
 
@@ -60,13 +55,11 @@ dropzone.addEventListener("drop", e=>{
 fileInput.addEventListener("change", ()=>{
   const f=fileInput.files[0]; if(f) setFile(f, f.name);
 });
-// paste
 document.addEventListener("paste", e=>{
   const f=[...(e.clipboardData?.items||[])].find(i=>i.kind==="file");
   if(f){ const file=f.getAsFile(); if(file) setFile(file, file.name); }
 });
 
-// ---------- camera
 let camStream=null;
 async function startCamera(){
   try{
@@ -92,7 +85,6 @@ cameraCaptureBtn.addEventListener("click", ()=>{
   stopCamera();
 });
 
-// ---------- examples
 async function loadExamples(){
   try{
     const r=await fetch("/api/examples"); const list=await r.json();
@@ -104,78 +96,46 @@ async function loadExamples(){
     for(const ex of list){
       const wrap=document.createElement("div");
       const img=document.createElement("img");
-      img.className="thumb"; img.alt=ex.name||ex.path; img.loading="lazy";
-      // use api example image? spec says list of local images if present in data/ — server returns path
-      // but browser can't load data/ directly; we fetch via blob from path if we had endpoint
-      // fallback: show placeholder and fetch on click via /api/examples image proxy
-      // we try to load from same path if server serves it; otherwise fetch blob via GET
-      // For now assign src to try direct; server doesn't expose data/ — we'll handle click by fetching image
-      // Use a data thumbnail: try to fetch thumbnail via fetch image blob URL
-      // Create object url by fetching image through a temp run? Instead just show label and click to load
-      img.src = ""; // placeholder
-      // try to fetch the image file via a simple fetch to a path that may be served? we don't have that route.
-      // So we show initials and rely on click to load
-      img.style.display="grid"; img.style.placeItems="center";
-      img.title = ex.name || ex.path;
-      // attempt to load via /api/examples image: we need an endpoint that serves example image
-      // workaround: fetch the file via a new endpoint? But we don't have it — we can fetch via GET to ex.path if server serves static?
-      // For now, create a canvas placeholder with name
-      const ph=document.createElement("div");
-      ph.className="thumb"; ph.style.display="grid"; ph.style.placeItems="center"; ph.style.fontSize=".7rem"; ph.style.cursor="pointer"; ph.textContent=(ex.name||"img").slice(0,8);
-      ph.title=ex.path;
-      ph.addEventListener("click", async ()=>{
+      img.className="thumb";
+      img.alt=ex.name||ex.path;
+      img.loading="lazy";
+      img.src="/api/examples/file?path="+encodeURIComponent(ex.path);
+      img.title=ex.name||ex.path;
+      img.addEventListener("click", async ()=>{
         document.querySelectorAll(".thumb.is-selected").forEach(e=>e.classList.remove("is-selected"));
-        ph.classList.add("is-selected");
-        // fetch image blob from server: we try /api/examples/image?name=... or direct path
-        // Since server doesn't expose data/, we try to fetch via a dedicated endpoint — add fallback: try fetch(ex.path)
+        img.classList.add("is-selected");
         try{
-          let blob=null;
-          // try direct path (if server serves project root)
-          try{ const rr=await fetch(ex.path); if(rr.ok) blob=await rr.blob(); }catch(_){}
-          if(!blob){
-            // try via api: GET /api/examples/file?path=...
-            try{ const rr2=await fetch("/api/examples/file?path="+encodeURIComponent(ex.path)); if(rr2.ok) blob=await rr2.blob(); }catch(_){}
-          }
-          if(blob){ setFile(blob, ex.name||"example.jpg"); setLeftStatus("Example loaded — click Run"); }
-          else { setLeftStatus("Example not available locally — using placeholder"); }
-        }catch(e){ setLeftStatus("Failed to load example"); }
+          const rr=await fetch("/api/examples/file?path="+encodeURIComponent(ex.path));
+          if(!rr.ok) throw new Error("fetch failed");
+          const blob=await rr.blob();
+          setFile(blob, ex.name||"example.jpg");
+          setLeftStatus("Example loaded — click Run");
+        }catch(_){ setLeftStatus("Failed to load example"); }
       });
-      wrap.appendChild(ph);
+      // fallback if image fails to load
+      img.addEventListener("error", ()=>{ img.style.display="none"; });
+      wrap.appendChild(img);
       const lab=document.createElement("div"); lab.className="thumb-label"; lab.textContent=ex.name||"example";
       wrap.appendChild(lab);
       exampleThumbs.appendChild(wrap);
-
-      // try to load thumbnail image if fetchable
-      (async()=>{
-        try{
-          const rr=await fetch(ex.path);
-          if(rr.ok){ const blob=await rr.blob(); ph.textContent=""; const realImg=document.createElement("img"); realImg.className="thumb"; realImg.src=URL.createObjectURL(blob); realImg.alt=ex.name; realImg.style.cursor="pointer";
-            realImg.addEventListener("click", async()=>{
-              document.querySelectorAll(".thumb.is-selected").forEach(e=>e.classList.remove("is-selected"));
-              realImg.classList.add("is-selected");
-              setFile(blob, ex.name||"example.jpg"); setLeftStatus("Example loaded — click Run");
-            });
-            ph.replaceWith(realImg);
-          }
-        }catch(_){}
-      })();
     }
-    // preselect first for demo (Step 4: example 14684 preselected)
-    // Auto-load first example blob so Run works with one click
+    // preselect first example so demo starts with one click
     if(list.length){
       try{
         const ex=list[0];
-        try{
-          const rr=await fetch(ex.path);
-          if(rr.ok){ const blob=await rr.blob(); setFile(blob, ex.name||"example.jpg"); setLeftStatus("Example "+(ex.name||"")+ " ready — click Run"); document.querySelector(".thumb")?.classList.add("is-selected"); }
-        }catch(_){}
+        const rr=await fetch("/api/examples/file?path="+encodeURIComponent(ex.path));
+        if(rr.ok){
+          const blob=await rr.blob();
+          setFile(blob, ex.name||"example.jpg");
+          setLeftStatus("Example "+(ex.name||"")+ " ready — click Run");
+          document.querySelector(".thumb")?.classList.add("is-selected");
+        }
       }catch(_){}
     }
   }catch(_){ exampleThumbs.innerHTML='<span class="muted small">Examples unavailable</span>'; }
 }
 loadExamples();
 
-// ---------- run analyze
 async function doAnalyze(){
   if(!selectedFile){ setError("No image", "Drop an image or pick an example."); return; }
   const req = requestInput.value.trim() || "count colonies";
@@ -205,28 +165,16 @@ async function doAnalyze(){
 }
 runBtn.addEventListener("click", doAnalyze);
 
-// ---------- render result
 function renderResult(data){
-  // hero
   const isT=isTNTC(data.status, data.count);
   countBig.textContent = data.count_label || (isT ? "TNTC >300" : data.count+" CFU");
   countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h} · ${data.duration_ms||""} ms` : "";
   statusPill.textContent = data.status==="tntc" ? "TNTC — dilute & re-plate" : data.status==="blurry" ? "blurry — re-photo" : data.status==="glare" ? "glare" : data.status==="empty" ? "empty" : "OK";
   statusPill.className="pill "+pillClass(data.status);
-
-  // viewer
   loadViewerImages(data);
-
-  // trace
   renderTrace(data.trace||[]);
-
-  // measurements
   renderMeasurements(data.measurements||[], data.csv_url);
-
-  // colony types
   renderColonyTypes(data.colony_types||[]);
-
-  // report
   reportText.textContent = data.report || "";
 }
 
@@ -241,7 +189,6 @@ function renderTrace(trace){
     const body=document.createElement("div"); body.className="tl-body";
     const name=document.createElement("div"); name.className="tl-name"; name.textContent=(i+1)+". "+(t.name||"step");
     const kv=document.createElement("div"); kv.className="tl-kv";
-    // pick key values
     const parts=[];
     if(t.blur_score!==undefined) parts.push("blur "+t.blur_score);
     if(t.glare_fraction!==undefined) parts.push("glare "+t.glare_fraction);
@@ -257,7 +204,6 @@ function renderTrace(trace){
     kv.textContent=parts.join(" · ")||JSON.stringify(t);
     body.appendChild(name); body.appendChild(kv);
     li.appendChild(icon); li.appendChild(body);
-    // stagger animation if not reduced motion
     if(!window.matchMedia("(prefers-reduced-motion: reduce)").matches){
       li.style.opacity="0"; li.style.transform="translateY(6px)"; li.style.transition="opacity .25s, transform .25s";
       setTimeout(()=>{ li.style.opacity="1"; li.style.transform="none"; }, i*80);
@@ -287,29 +233,24 @@ function renderColonyTypes(types){
   colonyTypesEl.innerHTML=html;
 }
 
-// ---------- canvas viewer
 function loadViewerImages(data){
-  // create image objects for drawing
   const imgUrl = data.image_url;
   const masksUrl = data.masks_url;
   imageEl = new Image(); imageEl.crossOrigin="anonymous";
   masksEl = null;
-  let imgLoaded=false, masksLoaded=false;
+  let imgLoaded=false;
   function tryDraw(){ if(imgLoaded) drawViewer(); }
-
   imageEl.onload=()=>{ imgLoaded=true; tryDraw(); };
   imageEl.onerror=()=>{ imgLoaded=true; tryDraw(); };
   imageEl.src = imgUrl;
-
   if(masksUrl && masksToggle.checked){
     masksEl = new Image(); masksEl.crossOrigin="anonymous";
-    masksEl.onload=()=>{ masksLoaded=true; tryDraw(); };
-    masksEl.onerror=()=>{ masksLoaded=false; tryDraw(); };
+    masksEl.onload=tryDraw;
+    masksEl.onerror=tryDraw;
     masksEl.src = masksUrl;
   } else {
     tryDraw();
   }
-  // store boxes for drawing
   if(data.boxes) lastResult.boxes = data.boxes;
   if(data.image_w) lastResult.image_w = data.image_w;
   if(data.image_h) lastResult.image_h = data.image_h;
@@ -319,7 +260,6 @@ function drawViewer(){
   if(!lastResult || !imageEl) return;
   const w = lastResult.image_w || imageEl.naturalWidth;
   const h = lastResult.image_h || imageEl.naturalHeight;
-  // size canvas to image size (let CSS scale down)
   viewer.width = w; viewer.height = h;
   viewer.style.width="100%"; viewer.style.height="auto";
   ctx.clearRect(0,0,w,h);
@@ -335,7 +275,6 @@ function drawViewer(){
       ctx.strokeRect(b.x1, b.y1, b.x2-b.x1, b.y2-b.y1);
     }
   }
-  // markers for last click (optional)
   if(lastResult._lastClick){
     const {x,y}=lastResult._lastClick;
     ctx.fillStyle="#C8892B"; ctx.beginPath(); ctx.arc(x,y, Math.max(4, w/250),0,Math.PI*2); ctx.fill();
@@ -344,11 +283,9 @@ function drawViewer(){
 }
 masksToggle.addEventListener("change", drawViewer);
 boxesToggle.addEventListener("change", drawViewer);
-
-// resize observer to keep canvas crisp — CSS scales, canvas buffer stays native
 window.addEventListener("resize", ()=>{ if(lastResult) drawViewer(); });
 
-// ---------- click-to-correct
+// click-to-correct: scale client coords to image coords
 function getClickCoords(e){
   const rect = viewer.getBoundingClientRect();
   const w = lastResult.image_w, h = lastResult.image_h;
@@ -368,25 +305,20 @@ viewer.addEventListener("click", async (e)=>{
       throw new Error((j.detail&&j.detail.error)||j.error||("HTTP "+r.status));
     }
     const data=await r.json();
-    // merge boxes / count — server returns updated counts and boxes
     lastResult.count = data.count; lastResult.count_label = data.count_label; lastResult.boxes = data.boxes;
     if(data.status) lastResult.status = data.status;
     if(data.measurements) lastResult.measurements = data.measurements;
     if(data.correction) lastResult._lastCorrection = data.correction;
-    // also update hero + table
     countBig.textContent = data.count_label || data.count+" CFU";
     statusPill.textContent = (data.status==="tntc"?"TNTC — dilute & re-plate":data.status||"ok");
     statusPill.className="pill "+pillClass(data.status);
     renderMeasurements(data.measurements||[], data.csv_url||lastResult.csv_url);
-    // need to reload image? masks.png updated on server — force reload
-    if(lastResult.masks_url) masksEl=null; // will reload via timestamp bust
-    // reload masks image
+    if(lastResult.masks_url) masksEl=null;
     const bust = "?t="+Date.now();
     if(masksToggle.checked){
       masksEl = new Image(); masksEl.crossOrigin="anonymous";
       masksEl.onload=drawViewer; masksEl.src = lastResult.masks_url + bust;
     }
-    // update boxes immediately (without waiting for masks)
     drawViewer();
   }catch(err){
     setLeftStatus(err.message.slice(0,120));
@@ -396,7 +328,6 @@ viewer.addEventListener("click", async (e)=>{
 modeAdd.addEventListener("click", ()=>{ correctMode="add"; modeAdd.classList.add("is-active"); modeRemove.classList.remove("is-active"); });
 modeRemove.addEventListener("click", ()=>{ correctMode="remove"; modeRemove.classList.add("is-active"); modeAdd.classList.remove("is-active"); });
 
-// ---------- tabs
 document.querySelectorAll(".tab").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     document.querySelectorAll(".tab").forEach(b=>{ b.classList.remove("is-active"); b.setAttribute("aria-selected","false"); });
@@ -407,10 +338,9 @@ document.querySelectorAll(".tab").forEach(btn=>{
   });
 });
 
-// ---------- mic — Web Audio API, resample to 24k mono, WAV encode, POST /api/transcribe
+// mic: Web Audio API -> resample to 24kHz mono -> 16-bit PCM WAV -> /api/transcribe
 let recState=null;
 function encodeWAV(pcmFloat32, sampleRate){
-  // pcmFloat32: Float32Array mono 24k, values -1..1 -> int16
   const numSamples=pcmFloat32.length;
   const buf=new ArrayBuffer(44+numSamples*2);
   const view=new DataView(buf);
@@ -454,7 +384,6 @@ async function stopRec(){
   stream.getTracks().forEach(t=>t.stop());
   micBtn.classList.remove("is-recording");
   micStatus.textContent="Transcribing…";
-  // concat
   let total=0; for(const c of chunks) total+=c.length;
   const all=new Float32Array(total); let o=0; for(const c of chunks){ all.set(c,o); o+=c.length; }
   const resampled=resampleLinear(all, sampleRate, 24000);
@@ -473,5 +402,4 @@ micBtn.addEventListener("click", ()=>{
   if(recState) stopRec(); else startRec();
 });
 
-// keyboard: Enter in request runs
 requestInput.addEventListener("keydown", e=>{ if(e.key==="Enter" && (e.metaKey||e.ctrlKey)){ doAnalyze(); }});
