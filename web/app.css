@@ -163,3 +163,5 @@ th{background:var(--bg); font-weight:600; color:var(--muted); text-transform:upp
 
 /* footer */
 .ftr{max-width:1200px; margin:0 auto; padding:16px 20px 24px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:.82rem; color:var(--muted); border-top:1px solid var(--line); margin-top:12px}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:var(--radius-btn);box-shadow:var(--shadow);font-size:14px;z-index:50;max-width:90vw}
+#toast[hidden]{display:none !important}
