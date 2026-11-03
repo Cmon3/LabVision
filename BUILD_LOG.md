@@ -53,6 +53,14 @@ Summary (Oct 31 Session 4, measured features + honest grouping):
 - Next: polish app (descriptive-only table), update README, record video Nov 1-4.
 
 ---
+Summary (Nov 3 Session 5, ship it):
+- Done: README rewrite (10 sections, mermaid, demo.png), app polish (tabs/overlay toggle/verification/examples/webcam), voice input (Muse Voice Transcribe, cached, hands-free), click-to-correct (SAM point prompts, runlog), tag v1.0-hackathon.
+- Blocked: none — dense plate 518 undercount persists (TNTC); small n (20 plates) limits morphotype claims.
+- Numbers: 65 pytest passed; AGAR 11.8% mean error 7/20 exact, BBBC w1 5.48 w2 18.95; morphotypes flag 80% vs 90% baseline (removed).
+- Cost: 0 new SAM (≤250 used, cached), voice $0.18/h billed per sec; total well under $60 SAM + $20 Muse caps.
+- Next: submit by Nov 4 17:00 Barcelona, X post with link, archive video.
+
+---
 Summary (Oct 31 Session 3, morphotypes + fixes):
 - Done: S3 Step 0-4: default prompt fix, plate px via HoughCircles, batch all colonies, morphotype grouping (morphology+terciles), bench ARI/purity/flag, agent+app tables (43 tests green).
 - Blocked: ARI 0.01 / purity 37.9% — morphology overlap + size terciles over-split pure plates (flag 20%); 5270 plate partial refusal (logged); dense plate 518 undercount unresolved.
