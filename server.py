@@ -104,6 +104,9 @@ def _boxes_list(seg) -> list[dict]:
 def _measurements(rows: list[dict]) -> list[dict]:
     out = []
     for r in rows:
+        if r.get("manual"):
+            out.append({"id": r["index"], "area_px": 0, "diameter_px": 0, "label": r.get("label", "manual, not measured")})
+            continue
         d = {"id": r["index"], "area_px": r["area_px"], "diameter_px": round(r["diameter_px"], 1)}
         if "area_mm2" in r:
             d["area_mm2"] = round(r["area_mm2"], 2)
@@ -586,6 +589,43 @@ async def api_correct(payload: dict):
                 masks[i, y1c:y2c, x1c:x2c] = True
         # if we had human tracking, need to adjust indices
         action = {"action": "remove", "x": x, "y": y, "box": removed}
+    elif mode == "manual":
+        # manual: add box without SAM, labelled manual, not measured
+        if x1 is not None and y1 is not None and x2 is not None and y2 is not None:
+            x1c = _clamp(min(x1, x2), 0, w - 1)
+            y1c = _clamp(min(y1, y2), 0, h - 1)
+            x2c = _clamp(max(x1, x2), 0, w - 1)
+            y2c = _clamp(max(y1, y2), 0, h - 1)
+            if x2c <= x1c or y2c <= y1c:
+                raise HTTPException(status_code=400, detail={"error": "invalid box for manual", "hint": "Drag a box with area"})
+            new_box = {"x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c}
+            action = {"action": "manual", "x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c, "box": new_box}
+        else:
+            if x is None or y is None:
+                raise HTTPException(status_code=400, detail={"error": "missing x/y for manual", "hint": "Send x,y or x1,y1,x2,y2 with mode manual"})
+            x = _clamp(x, 0, w - 1)
+            y = _clamp(y, 0, h - 1)
+            x1c = max(0, x - 10)
+            y1c = max(0, y - 10)
+            x2c = min(w, x + 10)
+            y2c = min(h, y + 10)
+            new_box = {"x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c}
+            action = {"action": "manual", "x": x, "y": y, "box": new_box}
+        boxes.append(new_box)
+        # for manual, create a simple rectangular mask but mark as not measured - we will not include in measurements
+        # we still need masks array for consistency, but we will not measure it
+        if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
+            # create mask for manual as box
+            new_mask = np.zeros((h, w), dtype=bool)
+            new_mask[new_box["y1"]:new_box["y2"], new_box["x1"]:new_box["x2"]] = True
+            masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
+        else:
+            masks = np.zeros((len(boxes), h, w), dtype=bool)
+            for i, bb in enumerate(boxes):
+                x1c, y1c, x2c, y2c = max(0, bb["x1"]), max(0, bb["y1"]), min(w, bb["x2"]), min(h, bb["y2"])
+                masks[i, y1c:y2c, x1c:x2c] = True
+        human_idx = {len(boxes) - 1}
+        # for manual, we will not include its area in measurements; we handle that after
     else:
         # add: point or box
         data = img_path.read_bytes()
@@ -608,81 +648,35 @@ async def api_correct(payload: dict):
                 seg = segment_point(data, x, y)
                 action = {"action": "add", "x": x, "y": y}
             if not seg.boxes:
-                # fallback: create simple mask from input (SAM found nothing, but human edit should still count)
-                if x1 is not None and y1 is not None and x2 is not None and y2 is not None and max(abs(x2 - x1), abs(y2 - y1)) >= 6:
-                    # use dragged box as fallback
-                    x1c = max(0, min(x1, x2))
-                    y1c = max(0, min(y1, y2))
-                    x2c = min(w, max(x1, x2))
-                    y2c = min(h, max(y1, y2))
-                    # inclusive -> exclusive for storage, but keep as provided
-                    new_box = {"x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c}
-                    # create rectangular mask for fallback
-                    new_mask = np.zeros((h, w), dtype=bool)
-                    new_mask[y1c:y2c, x1c:x2c] = True
-                else:
-                    # point fallback: small 20x20 box with circular mask
-                    cx = x if x is not None else x1
-                    cy = y if y is not None else y1
-                    cx = _clamp(cx, 0, w - 1)
-                    cy = _clamp(cy, 0, h - 1)
-                    x1c = max(0, cx - 10)
-                    y1c = max(0, cy - 10)
-                    x2c = min(w, cx + 10)
-                    y2c = min(h, cy + 10)
-                    new_box = {"x1": x1c, "y1": y1c, "x2": x2c, "y2": y2c}
-                    new_mask = np.zeros((h, w), dtype=bool)
-                    # circular mask
-                    yy, xx = np.ogrid[y1c:y2c, x1c:x2c]
-                    cy_c = (y1c + y2c) / 2
-                    cx_c = (x1c + x2c) / 2
-                    r = min((x2c - x1c), (y2c - y1c)) / 2 * 0.8
-                    new_mask[y1c:y2c, x1c:x2c] = (xx - cx_c) ** 2 + (yy - cy_c) ** 2 <= r**2
-                boxes.append(new_box)
-                # build masks array with fallback
-                if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
-                    masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
-                elif existing_masks is not None and len(boxes) == 1:
-                    masks = new_mask[None, ...]
-                else:
-                    masks = np.zeros((len(boxes), h, w), dtype=bool)
-                    for i, bb in enumerate(boxes[:-1]):
-                        x1cc, y1cc, x2cc, y2cc = max(0, bb["x1"]), max(0, bb["y1"]), min(w, bb["x2"]), min(h, bb["y2"])
-                        masks[i, y1cc:y2cc, x1cc:x2cc] = True
-                    masks[-1] = new_mask
-                human_idx = {len(boxes) - 1}
-                action["box"] = new_box
-                # don't treat as error; human edit succeeds with fallback
+                raise HTTPException(status_code=502, detail={"error": "SAM found no colony here — try a box around it", "hint": "Drag a box around the colony, or use 'Mark manually' for +1 manual count"})
+            b = seg.boxes[0]
+            new_box = {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
+            boxes.append(new_box)
+            # get new mask
+            new_masks = seg.decoded_masks()
+            new_mask = new_masks[0] if new_masks.shape[0] else np.zeros((h, w), dtype=bool)
+            # ensure new_mask is full size (it should be)
+            if new_mask.shape != (h, w):
+                tmp = np.zeros((h, w), dtype=bool)
+                bh = b.y2 - b.y1
+                bw = b.x2 - b.x1
+                if new_mask.shape == (bh, bw):
+                    tmp[b.y1:b.y2, b.x1:b.x2] = new_mask
+                    new_mask = tmp
+            # build masks array
+            if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
+                masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
+            elif existing_masks is not None and len(boxes) == 1:
+                masks = new_mask[None, ...]
             else:
-                b = seg.boxes[0]
-                new_box = {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
-                boxes.append(new_box)
-                # get new mask
-                new_masks = seg.decoded_masks()
-                new_mask = new_masks[0] if new_masks.shape[0] else np.zeros((h, w), dtype=bool)
-                # ensure new_mask is full size (it should be)
-                if new_mask.shape != (h, w):
-                    # if it's box-sized, place it (fallback)
-                    tmp = np.zeros((h, w), dtype=bool)
-                    bh = b.y2 - b.y1
-                    bw = b.x2 - b.x1
-                    if new_mask.shape == (bh, bw):
-                        tmp[b.y1:b.y2, b.x1:b.x2] = new_mask
-                        new_mask = tmp
-                # build masks array
-                if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
-                    masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
-                elif existing_masks is not None and len(boxes) == 1:
-                    masks = new_mask[None, ...]
-                else:
-                    # fallback: build from boxes as rect, but replace last with real
-                    masks = np.zeros((len(boxes), h, w), dtype=bool)
-                    for i, bb in enumerate(boxes[:-1]):
-                        x1c, y1c, x2c, y2c = max(0, bb["x1"]), max(0, bb["y1"]), min(w, bb["x2"]), min(h, bb["y2"])
-                        masks[i, y1c:y2c, x1c:x2c] = True
-                    masks[-1] = new_mask
-                human_idx = {len(boxes) - 1}
-                action["box"] = new_box
+                # fallback: build from boxes as rect, but replace last with real
+                masks = np.zeros((len(boxes), h, w), dtype=bool)
+                for i, bb in enumerate(boxes[:-1]):
+                    x1c, y1c, x2c, y2c = max(0, bb["x1"]), max(0, bb["y1"]), min(w, bb["x2"]), min(h, bb["y2"])
+                    masks[i, y1c:y2c, x1c:x2c] = True
+                masks[-1] = new_mask
+            human_idx = {len(boxes) - 1}
+            action["box"] = new_box
         except HTTPException:
             raise
         except Exception as e:
@@ -701,16 +695,35 @@ async def api_correct(payload: dict):
         pdiam = detect_plate_diameter_px(np.array(pil))
     except Exception:
         pdiam = None
-    if pdiam:
-        rows = measure_mod.measure_masks(masks, plate_diameter_px=pdiam, plate_diameter_mm=90.0)
+    if mode == "manual":
+        # manual: count it but don't measure area/diameter
+        if len(masks) > 1:
+            # measure all except last (manual)
+            m_non_manual = masks[:-1]
+            if pdiam:
+                rows = measure_mod.measure_masks(m_non_manual, plate_diameter_px=pdiam, plate_diameter_mm=90.0) if m_non_manual.shape[0] else []
+            else:
+                rows = measure_mod.measure_masks(m_non_manual) if m_non_manual.shape[0] else []
+        else:
+            rows = []
+        # add manual entry (no area/diameter)
+        rows.append({"index": len(boxes) - 1, "area_px": 0, "diameter_px": 0, "manual": True, "label": "manual, not measured"})
     else:
-        rows = measure_mod.measure_masks(masks)
+        if pdiam:
+            rows = measure_mod.measure_masks(masks, plate_diameter_px=pdiam, plate_diameter_mm=90.0)
+        else:
+            rows = measure_mod.measure_masks(masks)
 
     (rdir / "masks.png").write_bytes(_masks_png(masks, w, h, human_idx=human_idx))
     csv_path = rdir / "results.csv"
     if rows:
         with csv_path.open("w", newline="") as f:
-            wtr = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            fieldnames = list(rows[0].keys())
+            for r in rows[1:]:
+                for k in r.keys():
+                    if k not in fieldnames:
+                        fieldnames.append(k)
+            wtr = csv.DictWriter(f, fieldnames=fieldnames)
             wtr.writeheader()
             wtr.writerows(rows)
 

@@ -107,6 +107,7 @@ a{color:var(--teal)}
 .canvas-wrap canvas{max-width:100%; height:auto; display:block}
 .canvas-wrap.mode-add{cursor:crosshair}
 .canvas-wrap.mode-remove{cursor:pointer}
+.canvas-wrap.mode-manual{cursor:copy}
 .canvas-wrap canvas#viewer{cursor:inherit}
 #dragOverlay{pointer-events:none}
 .click-spinner{position:absolute; width:22px; height:22px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite}

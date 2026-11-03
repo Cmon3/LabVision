@@ -7,13 +7,13 @@ from labvision.segment import segment_point
 
 def test_build_point_prompt():
     s = _build_point_prompt(100, 200, 1000, 800, obj_id=1)
-    assert "1< |point;x=100;y=200;w=1000;h=800|>" == s
-    assert "<0f>" not in s
+    assert s == "<0f>1<|point;x=100;y=200;w=1000;h=800|>"
+    assert "<0f>" in s
 
 def test_build_box_prompt():
     s = _build_box_prompt(10, 20, 50, 60, 100, 100)
-    assert "box;x1=10;y1=20;x2=50;y2=60;w=100;h=100" in s
-    assert "<0f>" not in s
+    assert s == "<0f>1<|box;x1=10;y1=20;x2=50;y2=60;w=100;h=100|>"
+    assert "<0f>" in s
 
 def test_remove_by_click_synthetic():
     from app import _find_box_at, _find_mask_at

@@ -147,3 +147,50 @@ def test_analyze_stream_decided_by_honest():
         res = [e for e in events if e.get("type") == "result"]
         assert res, "no result event"
         assert res[0]["data"]["experimental"] is False, "experimental should be False when Muse prompt has no colour, even if request contains black"
+
+
+def test_correct_no_fabricated_mask():
+    # Add must not fabricate a mask when SAM returns empty; it should error
+    def fake_empty(image_bytes, prompt, *a, **kw):
+        from labvision.segment import Box, Segmentation
+        return Segmentation(boxes=[], raw_masks=[], width=100, height=100)
+
+    with patch("server.segment", side_effect=_fake_segment), \
+         patch("labvision.segment.Segmentation.decoded_masks", _fake_masks), \
+         patch("labvision.plate.detect_plate_diameter_px", return_value=None):
+        img = _fake_image_bytes()
+        r = client.post("/api/analyze", files={"image": ("test.png", img, "image/png")}, data={"request": "count"})
+        assert r.status_code == 200
+        run_id = r.json()["run_id"]
+        # mock SAM to return empty for point prompt
+        with patch("labvision.segment.segment", side_effect=fake_empty), patch("server.segment_point", side_effect=lambda *a, **kw: fake_empty(None, None)):
+            # patch segment_point to return empty
+            import labvision.segment as segmod
+            orig = segmod.segment_point
+
+            def fake_point(*a, **kw):
+                from labvision.segment import Box, Segmentation
+                return Segmentation(boxes=[], raw_masks=[], width=100, height=100)
+
+            with patch("server.segment_point", side_effect=fake_point):
+                r2 = client.post("/api/correct", json={"run_id": run_id, "x": 50, "y": 50, "mode": "add"})
+                assert r2.status_code == 502
+                assert "SAM found no colony" in r2.json()["detail"]["error"]
+                # count should not increase
+                r3 = client.post("/api/analyze", files={"image": ("test.png", img, "image/png")}, data={"request": "count"})
+                # check that no fabricated mask was saved: masks.npy should not have extra entry
+                # we can check that the run's boxes still 2
+                assert r.json()["count"] == 2
+
+    # manual mode should succeed and be labelled manual, not measured
+    with patch("server.segment", side_effect=_fake_segment), \
+         patch("labvision.segment.Segmentation.decoded_masks", _fake_masks), \
+         patch("labvision.plate.detect_plate_diameter_px", return_value=None):
+        img = _fake_image_bytes()
+        r = client.post("/api/analyze", files={"image": ("test.png", img, "image/png")}, data={"request": "count"})
+        run_id = r.json()["run_id"]
+        r2 = client.post("/api/correct", json={"run_id": run_id, "x": 10, "y": 10, "x1": 10, "y1": 10, "x2": 20, "y2": 20, "mode": "manual"})
+        assert r2.status_code == 200
+        assert r2.json()["count"] == 3
+        # manual measurement should be labelled manual, not measured
+        assert any("manual" in str(m).lower() for m in r2.json()["measurements"])

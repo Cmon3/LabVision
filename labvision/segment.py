@@ -275,10 +275,10 @@ def segment(
 
 
 def _build_point_prompt(x: int, y: int, w: int, h: int, obj_id: int = 1) -> str:
-    return f"{obj_id}< |point;x={x};y={y};w={w};h={h}|>"
+    return f"<0f>{obj_id}<|point;x={x};y={y};w={w};h={h}|>"
 
 def _build_box_prompt(x1: int, y1: int, x2: int, y2: int, w: int, h: int, obj_id: int = 1) -> str:
-    return f"{obj_id}< |box;x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h}|>"
+    return f"<0f>{obj_id}<|box;x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h}|>"
 
 def segment_point(
     image_bytes: bytes,

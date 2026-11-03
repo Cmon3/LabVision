@@ -8,7 +8,7 @@ const liveProgress = $("#liveProgress"), liveSteps = $("#liveSteps");
 const countBig = $("#countBig"), countSub = $("#countSub"), statusPill = $("#statusPill");
 const viewer = $("#viewer"), canvasWrap = $("#canvasWrap"), clickSpinner = $("#clickSpinner");
 const masksToggle = $("#masksToggle"), boxesToggle = $("#boxesToggle");
-const modeAdd = $("#modeAdd"), modeRemove = $("#modeRemove");
+const modeAdd = $("#modeAdd"), modeRemove = $("#modeRemove"), modeManual = $("#modeManual");
 const traceList = $("#traceList"), measureTable = $("#measureTable"), csvLink = $("#csvLink"), colonyTypesEl = $("#colonyTypes"), reportText = $("#reportText");
 const cameraBtn = $("#cameraBtn"), cameraWrap = $("#cameraWrap"), cameraVideo = $("#cameraVideo"), cameraCanvas = $("#cameraCanvas"), cameraCaptureBtn = $("#cameraCaptureBtn"), cameraCancelBtn = $("#cameraCancelBtn");
 
@@ -420,8 +420,8 @@ function showToast(msg){
 function updateCursorMode(){
   const wrap=document.getElementById("canvasWrap");
   if(!wrap) return;
-  wrap.classList.remove("mode-add","mode-remove");
-  wrap.classList.add(correctMode==="add"?"mode-add":"mode-remove");
+  wrap.classList.remove("mode-add","mode-remove","mode-manual");
+  wrap.classList.add(correctMode==="add"?"mode-add":correctMode==="manual"?"mode-manual":"mode-remove");
 }
 updateCursorMode();
 
@@ -463,14 +463,14 @@ function findBoxAtImage(x,y){
 }
 viewer.addEventListener("mousedown", (e)=>{
   if(!lastResult || !lastResult.run_id) return;
-  if(correctMode!=="add") return;
+  if(correctMode!=="add" && correctMode!=="manual") return;
   const p=getImageCoords(e.clientX, e.clientY);
   isDragging=true; dragStart={x:p.x,y:p.y}; dragCurrent={x:p.x,y:p.y};
 });
 viewer.addEventListener("mousemove", (e)=>{
   if(!lastResult || !lastResult.run_id) return;
   const p=getImageCoords(e.clientX, e.clientY);
-  if(isDragging && correctMode==="add"){
+  if(isDragging && (correctMode==="add" || correctMode==="manual")){
     dragCurrent={x:p.x,y:p.y};
     drawDragRect();
   } else if(correctMode==="remove"){
@@ -483,7 +483,7 @@ viewer.addEventListener("mousemove", (e)=>{
 });
 viewer.addEventListener("mouseup", async (e)=>{
   if(!lastResult || !lastResult.run_id) return;
-  if(correctMode==="add" && isDragging){
+  if((correctMode==="add" || correctMode==="manual") && isDragging){
     isDragging=false;
     const p=getImageCoords(e.clientX, e.clientY);
     dragCurrent={x:p.x,y:p.y};
@@ -492,12 +492,13 @@ viewer.addEventListener("mouseup", async (e)=>{
     const x2=Math.max(dragStart.x, dragCurrent.x), y2=Math.max(dragStart.y, dragCurrent.y);
     const dist=Math.max(Math.abs(x2-x1), Math.abs(y2-y1));
     let payload;
+    const modeToSend = correctMode==="manual" ? "manual" : "add";
     if(dist < 6){
-      payload={run_id:lastResult.run_id, x:Math.floor((x1+x2)/2), y:Math.floor((y1+y2)/2), mode:"add"};
+      payload={run_id:lastResult.run_id, x:Math.floor((x1+x2)/2), y:Math.floor((y1+y2)/2), mode:modeToSend};
     } else {
       // clamp inclusive
       const w=lastResult.image_w, h=lastResult.image_h;
-      payload={run_id:lastResult.run_id, x1:Math.max(0,Math.min(w-1,x1)), y1:Math.max(0,Math.min(h-1,y1)), x2:Math.max(0,Math.min(w-1,x2)), y2:Math.max(0,Math.min(h-1,y2)), mode:"add"};
+      payload={run_id:lastResult.run_id, x1:Math.max(0,Math.min(w-1,x1)), y1:Math.max(0,Math.min(h-1,y1)), x2:Math.max(0,Math.min(w-1,x2)), y2:Math.max(0,Math.min(h-1,y2)), mode:modeToSend};
     }
     dragStart=null; dragCurrent=null;
     lastResult._lastClick={x:payload.x||payload.x1, y:payload.y||payload.y1}; drawViewer();
@@ -526,7 +527,7 @@ viewer.addEventListener("mouseup", async (e)=>{
         masksEl.onload=drawViewer; masksEl.src = lastResult.masks_url + bust;
       }
       drawViewer();
-      showToast("Added colony — count updated");
+      showToast(modeToSend==="manual" ? "Manually marked — count updated (not measured)" : "Added colony — count updated");
     }catch(err){
       const msg=err.message.slice(0,200);
       setLeftStatus(msg); showToast(msg);
@@ -572,8 +573,11 @@ viewer.addEventListener("mouseup", async (e)=>{
 });
 viewer.addEventListener("mouseleave", ()=>{ isDragging=false; clearDragRect(); hoveredIdx=null; drawViewer(); });
 
-modeAdd.addEventListener("click", ()=>{ correctMode="add"; modeAdd.classList.add("is-active"); modeRemove.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
-modeRemove.addEventListener("click", ()=>{ correctMode="remove"; modeRemove.classList.add("is-active"); modeAdd.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+modeAdd.addEventListener("click", ()=>{ correctMode="add"; modeAdd.classList.add("is-active"); modeRemove.classList.remove("is-active"); if(modeManual) modeManual.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+modeRemove.addEventListener("click", ()=>{ correctMode="remove"; modeRemove.classList.add("is-active"); modeAdd.classList.remove("is-active"); if(modeManual) modeManual.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+if(modeManual){
+  modeManual.addEventListener("click", ()=>{ correctMode="manual"; modeManual.classList.add("is-active"); modeAdd.classList.remove("is-active"); modeRemove.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+}
 
 document.querySelectorAll(".tab").forEach(btn=>{
   btn.addEventListener("click", ()=>{
