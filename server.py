@@ -811,5 +811,15 @@ def health():
 
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--inbox", type=str, default=None, help="inbox folder to poll")
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8000)
+    args, _ = ap.parse_known_args()
+    if args.inbox:
+        from labvision.inbox import start_inbox_thread
+        start_inbox_thread(args.inbox)
+        print(f"Inbox polling {args.inbox}")
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host=args.host, port=args.port)
