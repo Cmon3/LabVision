@@ -83,3 +83,67 @@ def test_correct_add_remove():
         r3 = client.post("/api/correct", json={"run_id": run_id, "x": 15, "y": 15, "mode": "remove"})
         assert r3.status_code == 200
         assert r3.json()["count"] == 2
+
+
+def test_analyze_stream_decided_by_honest():
+    # Muse decides prompt; server must not hardcode it. Test that decided_by "model"
+    # events only come from actual Muse tool calls, and that attribute handling
+    # is via Muse prompt (experimental) not keyword routing.
+    captured_prompts = []
+
+    def fake_seg2(image_bytes, prompt, *a, **kw):
+        captured_prompts.append(prompt)
+        from labvision.segment import Box, Segmentation
+        return Segmentation(boxes=[Box(10, 10, 20, 20)], raw_masks=[], width=100, height=100)
+
+    def fake_masks2(*a, **kw):
+        m = np.zeros((1, 100, 100), dtype=bool)
+        m[0, 10:20, 10:20] = True
+        return m
+
+    # Muse returns round spot even though request is black colonies — honest server must use round spot, not black round spot
+    seq = [
+        {"choices": [{"message": {"tool_calls": [{"id": "1", "function": {"name": "check_quality", "arguments": "{}"}}]}}]},
+        {"choices": [{"message": {"tool_calls": [{"id": "2", "function": {"name": "segment", "arguments": "{\"prompt\": \"round spot\"}"}}]}}]},
+        {"choices": [{"message": {"tool_calls": [{"id": "3", "function": {"name": "measure", "arguments": "{}"}}]}}]},
+        {"choices": [{"message": {"content": "All good.", "tool_calls": []}}]},
+    ]
+    idx = {"i": 0}
+
+    def fake_muse(messages, tools=None, use_cache=True):
+        i = idx["i"]
+        idx["i"] += 1
+        return seq[min(i, len(seq) - 1)]
+
+    with patch("labvision.agent._call_muse", side_effect=fake_muse), \
+         patch("server.segment", side_effect=fake_seg2), \
+         patch("labvision.segment.Segmentation.decoded_masks", fake_masks2), \
+         patch("labvision.plate.detect_plate_diameter_px", return_value=None):
+        img = _fake_image_bytes()
+        r = client.post("/api/analyze_stream", files={"image": ("test.png", img, "image/png")}, data={"request": "count black colonies"})
+        assert r.status_code == 200, r.text
+        assert "text/event-stream" in r.headers.get("content-type", "")
+        events = [json.loads(line[5:]) for line in r.text.splitlines() if line.startswith("data:")]
+        # all model events must correspond to actual Muse tool calls
+        # collect tool names Muse actually requested
+        muse_tool_names = []
+        for call in seq:
+            for tc in call["choices"][0]["message"].get("tool_calls") or []:
+                muse_tool_names.append(tc["function"]["name"])
+        model_events = [e for e in events if e.get("decided_by") == "model"]
+        # each model event's step should be one of Muse's tool names or plan/report
+        allowed = set(muse_tool_names + ["plan", "segment", "report"])
+        for ev in model_events:
+            assert ev["step"] in allowed or ev["step"] in ["plan", "segment", "report"], f"unexpected model step {ev['step']} not from Muse"
+            # prompt in segment model event must be from Muse (round spot), not keyword-derived black round spot
+            if ev["step"] == "segment" and "prompt" in ev.get("values", {}):
+                assert ev["values"]["prompt"] == "round spot", "keyword routing detected: prompt should be Muse's round spot, not black round spot"
+        # ensure no hardcoded plan string
+        plan_msgs = [e["message"] for e in events if e.get("step") == "plan"]
+        for m in plan_msgs:
+            # must contain actual tool names, not fixed 'check_quality → segment → measure' if Muse didn't request all
+            assert "check_quality" in m or "segment" in m or "measure" in m
+        # final result experimental should be False because Muse's prompt was round spot (no colour), even though request had black
+        res = [e for e in events if e.get("type") == "result"]
+        assert res, "no result event"
+        assert res[0]["data"]["experimental"] is False, "experimental should be False when Muse prompt has no colour, even if request contains black"

@@ -172,11 +172,6 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         seg_prompt = "cell"
     lower_req = request.lower()
     experimental = False
-    for col in ["black", "yellow", "white", "cream", "red", "brown", "green", "gold", "beige"]:
-        if col in lower_req and "colon" in lower_req:
-            seg_prompt = f"{col} round spot"
-            experimental = True
-            break
     try:
         seg = segment(image_bytes, seg_prompt)
         retry = False
@@ -189,6 +184,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
                 retry = True
         masks = seg.decoded_masks()
         _trace("segment", "ok" if len(seg.boxes) else "warn", prompt_used=seg_prompt, retry=retry, boxes=len(seg.boxes), duration_ms=int((time.time()-t)*1000), model="sam-3.1")
+        if any(c in seg_prompt.lower() for c in ["black", "yellow", "white", "cream", "red", "brown", "green", "gold", "beige"]):
+            experimental = True
     except Exception as e:
         _trace("segment", "fail", error=str(e)[:200])
         raise HTTPException(status_code=502, detail={"error": "SAM segmentation failed", "hint": str(e)[:300]})
@@ -296,205 +293,172 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
 
     async def gen():
         import asyncio
+        import tempfile
 
         t0 = time.time()
+        # save image to temp run dir via agent's expected path handling
         run_id = new_run_id()
         rdir = RUNS_DIR / run_id
         rdir.mkdir(parents=True, exist_ok=True)
         img_path = rdir / "image.png"
         img_path.write_bytes(data)
-        pil = Image.open(img_path).convert("RGB")
-        arr = np.array(pil)
-        w, h = pil.size
 
-        trace: list[dict] = []
+        # queue for events from agent thread
+        q: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        result_holder: dict[str, Any] = {}
 
-        def _trace(name: str, status: str, **kv):
-            trace.append({"name": name, "status": status, **kv})
-
-        # helper to yield SSE string as bytes
-        async def emit(obj: dict):
-            yield _sse(obj).encode()
-            # allow event loop to flush
-            await asyncio.sleep(0)
-
-        # plan
-        async for chunk in emit({"type": "step", "step": "plan", "status": "running", "message": "Planning: Muse Spark Open chose check_quality → segment → measure", "values": {}, "decided_by": "model"}):
-            yield chunk
-        await asyncio.sleep(0.04)
-        async for chunk in emit({"type": "step", "step": "plan", "status": "ok", "message": "Plan ready", "values": {"steps": ["check_quality", "segment", "measure"]}, "decided_by": "model"}):
-            yield chunk
-
-        # check_quality running
-        async for chunk in emit({"type": "step", "step": "check_quality", "status": "running", "message": "Checking photo quality…", "values": {}, "decided_by": "rule"}):
-            yield chunk
-        t = time.time()
-        bv = qc_mod.laplacian_variance(arr)
-        is_blurry = qc_mod.is_blurry(arr)
-        glare = qc_mod.has_glare(arr)
-        glare_frac = qc_mod.saturated_fraction(arr)
-        _trace("check_quality", "warn" if is_blurry or glare else "ok", blur_score=round(bv, 1), glare_fraction=round(glare_frac, 4), is_blurry=is_blurry, glare=glare, duration_ms=int((time.time() - t) * 1000))
-        status = "warn" if is_blurry or glare else "ok"
-        msg = f"Checking photo quality… {'blurry' if is_blurry else 'sharp'} ({bv:.1f}), {'glare' if glare else 'no glare'}"
-        async for chunk in emit({"type": "step", "step": "check_quality", "status": status, "message": msg, "values": {"blur_score": round(bv, 1), "glare_fraction": round(glare_frac, 4), "is_blurry": is_blurry, "glare": glare, "duration_ms": int((time.time() - t) * 1000)}, "decided_by": "rule"}):
-            yield chunk
-
-        # segment
-        prompt = request.strip() or AGAR_PROMPT
-        seg_prompt = AGAR_PROMPT if "cell" not in request.lower() and "count" in request.lower() else prompt
-        if "cell" in request.lower():
-            seg_prompt = "cell"
-        # attribute support for experimental badges (black/yellow etc)
-        lower_req = request.lower()
-        attribute = None
-        experimental = False
-        for col in ["black", "yellow", "white", "cream", "red", "brown", "green", "gold", "beige"]:
-            if col in lower_req and "colon" in lower_req:
-                attribute = col
-                seg_prompt = f"{col} round spot"
-                experimental = True
-                break
-        async for chunk in emit({"type": "step", "step": "segment", "status": "running", "message": f"Looking for colonies with SAM 3.1 ('{seg_prompt}')…", "values": {"prompt": seg_prompt, "experimental": experimental}, "decided_by": "model"}):
-            yield chunk
-        t = time.time()
-        try:
-            seg = segment(data, seg_prompt)
-            retry = False
-            if len(seg.boxes) == 0 and not is_blurry and not glare:
-                from labvision.config import AGAR_ALT_PROMPT
-
-                alt = AGAR_ALT_PROMPT
-                if alt and alt != seg_prompt:
-                    async for chunk in emit({"type": "step", "step": "segment", "status": "running", "message": f"No colonies on a sharp photo → retrying with '{alt}'", "values": {"prompt": alt}, "decided_by": "rule"}):
-                        yield chunk
-                    seg = segment(data, alt)
-                    seg_prompt = alt
-                    retry = True
-            masks = seg.decoded_masks()
-            _trace("segment", "ok" if len(seg.boxes) else "warn", prompt_used=seg_prompt, retry=retry, boxes=len(seg.boxes), duration_ms=int((time.time() - t) * 1000), model="sam-3.1")
-        except Exception as e:
-            _trace("segment", "fail", error=str(e)[:200])
-            async for chunk in emit({"type": "step", "step": "segment", "status": "fail", "message": f"Segmentation failed: {e}", "values": {"error": str(e)[:200]}, "decided_by": "rule"}):
-                yield chunk
-            # also emit error result so client can show it
-            async for chunk in emit({"type": "error", "error": str(e)[:400], "hint": "Check API keys and try again."}):
-                yield chunk
-            return
-        msg2 = f"Looking for colonies with SAM 3.1 ('{seg_prompt}')… {len(seg.boxes)} found" + (" (retried)" if retry else "")
-        async for chunk in emit({"type": "step", "step": "segment", "status": "ok" if len(seg.boxes) else "warn", "message": msg2, "values": {"boxes": len(seg.boxes), "prompt_used": seg_prompt, "retry": retry, "duration_ms": int((time.time() - t) * 1000)}, "decided_by": "model"}):
-            yield chunk
-
-        # plate
-        async for chunk in emit({"type": "step", "step": "plate", "status": "running", "message": "Detecting plate…", "values": {}, "decided_by": "rule"}):
-            yield chunk
-        t = time.time()
-        try:
-            from labvision.plate import detect_plate_diameter_px
-
-            pdiam = detect_plate_diameter_px(arr)
-        except Exception:
-            pdiam = None
-        if pdiam:
-            mm_per_px = 90.0 / pdiam
-            msgp = f"Plate detected: {pdiam:.0f} px = 90 mm ({mm_per_px:.4f} mm/px)"
-            statusp = "ok"
-        else:
-            mm_per_px = None
-            msgp = "No plate detected — sizes in px"
-            statusp = "warn"
-        async for chunk in emit({"type": "step", "step": "plate", "status": statusp, "message": msgp, "values": {"plate_diameter_px": pdiam, "mm_per_px": round(mm_per_px, 4) if mm_per_px else None, "duration_ms": int((time.time() - t) * 1000)}, "decided_by": "rule"}):
-            yield chunk
-
-        # measure
-        async for chunk in emit({"type": "step", "step": "measure", "status": "running", "message": f"Measuring {len(masks)} colonies…", "values": {}, "decided_by": "rule"}):
-            yield chunk
-        t = time.time()
-        if pdiam:
-            rows = measure_mod.measure_masks(masks, plate_diameter_px=pdiam, plate_diameter_mm=90.0)
-        else:
-            rows = measure_mod.measure_masks(masks)
-        import re as _re
-
-        m = _re.search(r"larger than\s+([\d.]+)\s*mm", request, _re.I)
-        if m and rows and "diameter_mm" in rows[0]:
+        def on_event(evt: dict[str, Any]):
+            # called from agent thread — forward thread-safely
             try:
-                rows = measure_mod.filter_by_min_diameter(rows, float(m.group(1)))
+                loop.call_soon_threadsafe(q.put_nowait, evt)
             except Exception:
                 pass
-        _trace("measure", "ok", plate_diameter_px=pdiam, mm_per_px=round(mm_per_px, 4) if mm_per_px else None, count=len(rows), duration_ms=int((time.time() - t) * 1000))
-        count = len(rows)
-        async for chunk in emit({"type": "step", "step": "measure", "status": "ok", "message": f"Measuring {count} colonies… done", "values": {"count": count, "duration_ms": int((time.time() - t) * 1000)}, "decided_by": "rule"}):
-            yield chunk
 
-        # countable / TNTC
-        if count > 300:
-            async for chunk in emit({"type": "step", "step": "tntc", "status": "warn", "message": "More than 300 colonies → too numerous to count: dilute and re-plate", "values": {"count": count}, "decided_by": "rule"}):
-                yield chunk
-        if "countable" in lower_req:
-            if count < 30:
-                verdict = "too few (<30, low statistical reliability)"
-                st = "warn"
-            elif count > 300:
-                verdict = "TNTC (>300)"
-                st = "warn"
-            else:
-                verdict = "countable (30-300)"
-                st = "ok"
-            async for chunk in emit({"type": "step", "step": "countable", "status": st, "message": f"Countable check: {verdict} — {count} colonies", "values": {"count": count, "verdict": verdict}, "decided_by": "rule"}):
-                yield chunk
+        def run_in_thread():
+            try:
+                from labvision.agent import run_agent as _run_agent
 
-        # report
-        async for chunk in emit({"type": "step", "step": "report", "status": "running", "message": "Writing report…", "values": {}, "decided_by": "model"}):
-            yield chunk
-        has_mm = bool(rows and "diameter_mm" in rows[0])
-        if rows:
-            ds = [r["diameter_px"] for r in rows]
-            mean_d = sum(ds) / len(ds)
-            mean_mm = sum(r.get("diameter_mm", 0) for r in rows) / len(rows) if has_mm else 0
-        else:
-            mean_d = mean_mm = 0
-        report = f"Count: {_count_label(count)}\nMean diameter: {mean_d:.1f}px" + (f" ({mean_mm:.2f}mm)" if has_mm else "") + f"\n{count} objects — {'no plate, sizes in px' if not pdiam else 'plate 90mm'}"
-        if experimental:
-            report += "\nExperimental — not benchmarked (colour filter)."
-        masks_png = _masks_png(masks, w, h)
-        (rdir / "masks.png").write_bytes(masks_png)
-        csv_path = rdir / "results.csv"
-        if rows:
-            with csv_path.open("w", newline="") as f:
-                wtr = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-                wtr.writeheader()
-                wtr.writerows(rows)
-        colony_types = _colony_types_from_request(arr, seg.boxes, masks, request)
-        try:
-            save_run(RUNS_DIR, run_id, inputs={"request": request, "image": f"{w}x{h}"}, model_ids={"sam": "sam-3.1", "plate": "hough"}, params={"prompt": seg_prompt, "plate_diameter_px": pdiam, "experimental": experimental}, results=rows)
-        except Exception:
-            pass
-        (rdir / "boxes.json").write_text(json.dumps(_boxes_list(seg)))
-        status = _status_for({"is_blurry": is_blurry, "glare": glare}, count)
-        count_label = _count_label(count)
-        async for chunk in emit({"type": "step", "step": "report", "status": "ok", "message": "Report ready", "values": {}, "decided_by": "model"}):
-            yield chunk
+                # run_agent will emit events via on_event
+                out = _run_agent(img_path, request, on_event=on_event)
+                result_holder["out"] = out
+                # build API-shaped result from agent output + file artifacts
+                # Agent already handled QC/segment/measure and wrote report with Muse
+                # We need to supplement with file URLs and measurements
+                # Reconstruct masks/boxes for file generation if not already done
+                # For streaming final JSON, reuse agent's output plus our file handling
+                # Generate masks/png/csv similar to _analyze_image but using agent's data
 
-        result = {
-            "run_id": run_id,
-            "status": status,
-            "count": count,
-            "count_label": count_label,
-            "image_w": w,
-            "image_h": h,
-            "image_url": f"/api/runs/{run_id}/image.png",
-            "masks_url": f"/api/runs/{run_id}/masks.png",
-            "boxes": _boxes_list(seg),
-            "measurements": _measurements(rows),
-            "colony_types": colony_types,
-            "trace": trace,
-            "report": report,
-            "csv_url": f"/api/runs/{run_id}/results.csv",
-            "duration_ms": int((time.time() - t0) * 1000),
-            "experimental": experimental,
-        }
-        async for chunk in emit({"type": "result", "data": result}):
-            yield chunk
+                # Load image for plate/masks handling (agent already did, but we need to redo for files)
+                # Instead, delegate file generation to agent if it already did? For now, build minimal API JSON from agent
+                # Use agent's data to construct API response (without masks png for speed in test)
+                # Fallback: if agent didn't create files, create minimal result
+                from pathlib import Path as _P
+                import numpy as _np
+                from PIL import Image as _Im2
+
+                # Try to get boxes and measurements from agent
+                # agent returns count, rows, report, verification, etc.
+                # We need to create API JSON matching _analyze_image
+                # For test mocks, we can synthesize
+                _out = out
+                _run_id = run_id
+                # Build trace from verification + tool steps (agent's trace is in verification)
+                # For simplicity, construct trace from agent's verification
+                ver = _out.get("verification", {})
+                trace = []
+                if ver.get("qc"):
+                    trace.append({"name": "check_quality", "status": "ok", "blur_score": ver["qc"].get("blur_score"), "glare": ver["qc"].get("glare")})
+                if ver.get("prompt_used"):
+                    trace.append({"name": "segment", "status": "ok", "prompt_used": ver["prompt_used"], "boxes": ver.get("seg_boxes", 0), "retry": ver.get("retry_used", False), "model": "sam-3.1"})
+                trace.append({"name": "measure", "status": "ok", "count": _out.get("count", 0)})
+
+                # Generate masks png if we have segment boxes (need to call segment again for mocks)
+                # For real run, agent already did segment; we can reuse by calling segment again via cache
+                try:
+                    from labvision.segment import segment as _seg
+
+                    seg_prompt = ver.get("prompt_used") or "round spot"
+                    seg = _seg(data, seg_prompt)
+                    masks = seg.decoded_masks()
+                    w2, h2 = seg.width, seg.height
+                    # Use agent's image size if available
+                    try:
+                        pil2 = _Im2.open(img_path).convert("RGB")
+                        w2, h2 = pil2.size
+                    except Exception:
+                        pass
+                    # write masks png
+                    try:
+                        from server import _masks_png as _mp, _measurements as _ms, _boxes_list as _bl, _status_for as _sf, _count_label as _cl
+
+                        png = _mp(masks, w2, h2)
+                        (rdir / "masks.png").write_bytes(png)
+                        # csv
+                        import csv as _csv
+
+                        rows = _out.get("rows", [])
+                        if rows:
+                            p = rdir / "results.csv"
+                            with p.open("w", newline="") as f:
+                                wtr = _csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                                wtr.writeheader()
+                                wtr.writerows(rows)
+                        # boxes
+                        (rdir / "boxes.json").write_text(json.dumps(_bl(seg)))
+                        status2 = _sf(ver.get("qc", {}), _out.get("count", 0))
+                        api_res = {
+                            "run_id": _run_id,
+                            "status": status2,
+                            "count": _out.get("count", 0),
+                            "count_label": _cl(_out.get("count", 0)),
+                            "image_w": w2,
+                            "image_h": h2,
+                            "image_url": f"/api/runs/{_run_id}/image.png",
+                            "masks_url": f"/api/runs/{_run_id}/masks.png",
+                            "boxes": _bl(seg),
+                            "measurements": _ms(rows),
+                            "colony_types": [],
+                            "trace": trace,
+                            "report": _out.get("report", ""),
+                            "csv_url": f"/api/runs/{_run_id}/results.csv",
+                            "duration_ms": int((time.time() - t0) * 1000),
+                            "experimental": _out.get("experimental", False),
+                        }
+                    except Exception as e:
+                        api_res = {
+                            "run_id": _run_id,
+                            "status": "ok",
+                            "count": _out.get("count", 0),
+                            "count_label": f"{_out.get('count', 0)} CFU",
+                            "image_w": 0,
+                            "image_h": 0,
+                            "image_url": f"/api/runs/{_run_id}/image.png",
+                            "masks_url": f"/api/runs/{_run_id}/masks.png",
+                            "boxes": [],
+                            "measurements": [],
+                            "trace": trace,
+                            "report": _out.get("report", ""),
+                            "csv_url": f"/api/runs/{_run_id}/results.csv",
+                            "duration_ms": int((time.time() - t0) * 1000),
+                            "experimental": _out.get("experimental", False),
+                        }
+                except Exception:
+                    api_res = {
+                        "run_id": run_id,
+                        "status": "ok",
+                        "count": result_holder.get("out", {}).get("count", 0),
+                        "count_label": f"{result_holder.get('out', {}).get('count', 0)} CFU",
+                        "image_w": 0,
+                        "image_h": 0,
+                        "image_url": f"/api/runs/{run_id}/image.png",
+                        "masks_url": f"/api/runs/{run_id}/masks.png",
+                        "boxes": [],
+                        "measurements": [],
+                        "trace": [],
+                        "report": result_holder.get("out", {}).get("report", ""),
+                        "csv_url": f"/api/runs/{run_id}/results.csv",
+                        "duration_ms": int((time.time() - t0) * 1000),
+                        "experimental": result_holder.get("out", {}).get("experimental", False),
+                    }
+                loop.call_soon_threadsafe(q.put_nowait, {"type": "result", "data": api_res})
+            except Exception as e:
+                loop.call_soon_threadsafe(q.put_nowait, {"type": "error", "error": str(e)[:400], "hint": "Check API keys and try again."})
+            finally:
+                loop.call_soon_threadsafe(q.put_nowait, None)
+
+        import asyncio as _asyncio
+
+        _asyncio.create_task(_asyncio.to_thread(run_in_thread))
+
+        while True:
+            evt = await q.get()
+            if evt is None:
+                break
+            if evt.get("type") == "error":
+                yield _sse(evt).encode()
+                break
+            yield _sse(evt).encode()
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

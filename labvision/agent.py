@@ -33,10 +33,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "segment",
-            "description": "Segment image for a noun phrase (one concept, e.g. 'round spot', 'cell'). Returns count and image size.",
+            "description": "Segment image for a noun phrase (one concept, e.g. 'round spot', 'cell'). For colour-filtered requests like 'black colonies', include the colour in the prompt (e.g. 'black round spot'); such prompts are experimental and not benchmarked.",
             "parameters": {
                 "type": "object",
-                "properties": {"prompt": {"type": "string", "description": "short noun phrase"}},
+                "properties": {"prompt": {"type": "string", "description": "short noun phrase, may include colour like 'black round spot'"}},
                 "required": ["prompt"],
             },
         },
@@ -82,6 +82,7 @@ Rules:
 - Always call check_quality first.
 - If quality fails (blurry, glare, empty, crowded) call ask_rephoto.
 - Otherwise call segment with a short noun phrase for the objects the user asked about, then measure. Optionally call characterize for morphology.
+- For colour requests like 'black colonies' or 'yellow colonies', include the colour in the segment prompt (e.g. 'black round spot', 'yellow round spot'). These are experimental.
 - Do NOT invent numbers. The final report numbers will be filled by code from tool outputs.
 - Provide a short 2-sentence interpretation for the report (no numbers needed, they are inserted).
 """
@@ -141,8 +142,20 @@ def _load_image(path: str | Path) -> tuple[np.ndarray, bytes]:
     return arr, data
 
 
-def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> dict[str, Any]:
-    """Run agent loop. Returns dict with report, count, rows, qc, etc. Numbers from measure only."""
+def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_event: Any = None) -> dict[str, Any]:
+    """Run agent loop. Returns dict with report, count, rows, qc, etc. Numbers from measure only.
+
+    If on_event is provided, it is called with step dicts for live progress:
+      {type:"step", step, status, message, values, decided_by}
+    decided_by: "model" for Muse tool choices/prompt, "rule" for thresholds/retry/TNTC, "human" for clicks (handled in server).
+    """
+    def _emit(evt: dict[str, Any]):
+        if on_event:
+            try:
+                on_event(evt)
+            except Exception:
+                pass
+
     image_path = Path(image_path)
     img_arr, img_bytes = _load_image(image_path)
     # state
@@ -156,6 +169,9 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
     retry_used: bool = False
     plate_diameter_px: float | None = None
     plate_detected: bool = False
+    experimental: bool = False
+    # colour words for experimental detection
+    _colours = ["black", "yellow", "white", "cream", "red", "brown", "green", "gold", "beige"]
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": f"Image: {image_path.name}\nRequest: {request}\nUse tools to answer."},
@@ -168,7 +184,17 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         if not tool_calls:
             # final assistant note
             assistant_note = choice.get("content") or "Analysis complete."
+            _emit({"type": "step", "step": "report", "status": "running", "message": "Writing report…", "values": {}, "decided_by": "model"})
             break
+        # plan: what Muse actually requested
+        _emit({
+            "type": "step",
+            "step": "plan",
+            "status": "ok",
+            "message": f"Planning: Muse Spark Open chose {' → '.join(tc['function']['name'] for tc in tool_calls)}",
+            "values": {"tool_calls": [{"name": tc["function"]["name"], "arguments": json.loads(tc["function"]["arguments"] or "{}")} for tc in tool_calls]},
+            "decided_by": "model",
+        })
         # execute tools
         messages.append(choice)
         for tc in tool_calls:
@@ -176,6 +202,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
             args = json.loads(tc["function"]["arguments"] or "{}")
             try:
                 if fname == "check_quality":
+                    _emit({"type": "step", "step": "check_quality", "status": "running", "message": "Checking photo quality…", "values": {}, "decided_by": "rule"})
                     bv = qc_mod.laplacian_variance(img_arr)
                     result = {
                         "blur_score": bv,
@@ -184,10 +211,19 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                         "glare_frac": qc_mod.saturated_fraction(img_arr),
                     }
                     qc_result = result
+                    _emit({
+                        "type": "step",
+                        "step": "check_quality",
+                        "status": "warn" if result["is_blurry"] or result["glare"] else "ok",
+                        "message": f"Checking photo quality… {'blurry' if result['is_blurry'] else 'sharp'} ({bv:.1f}), {'glare' if result['glare'] else 'no glare'}",
+                        "values": {"blur_score": round(bv, 1), "glare_fraction": round(result["glare_frac"], 4), "is_blurry": result["is_blurry"], "glare": result["glare"]},
+                        "decided_by": "rule",
+                    })
                 elif fname == "segment":
                     from labvision.config import AGAR_PROMPT as _DEFAULT_PROMPT
 
                     prompt = args.get("prompt", _DEFAULT_PROMPT)
+                    _emit({"type": "step", "step": "segment", "status": "running", "message": f"Looking for colonies with SAM 3.1 ('{prompt}')…", "values": {"prompt": prompt}, "decided_by": "model"})
                     seg_result = segment(img_bytes, prompt)
                     # retry once if 0 but QC says not empty (sharp, no glare)
                     if len(seg_result.boxes) == 0 and qc_result is not None and not qc_result.get("is_blurry") and not qc_result.get("glare"):
@@ -196,20 +232,34 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
 
                             alt = AGAR_ALT_PROMPT
                             if alt and alt != prompt:
+                                _emit({"type": "step", "step": "segment", "status": "running", "message": f"No colonies on a sharp photo → retrying with '{alt}'", "values": {"prompt": alt}, "decided_by": "rule"})
                                 seg_result = segment(img_bytes, alt)
                                 prompt = alt
                                 retry_used = True
                         except Exception:
                             pass
                     prompt_used = prompt
+                    # experimental if prompt contains colour
+                    if any(c in prompt.lower() for c in _colours):
+                        experimental = True
                     masks = seg_result.decoded_masks()
                     result = {"count": len(seg_result.boxes), "width": seg_result.width, "height": seg_result.height, "masks": int(masks.shape[0]), "prompt_used": prompt}
+                    _emit({
+                        "type": "step",
+                        "step": "segment",
+                        "status": "ok" if len(seg_result.boxes) else "warn",
+                        "message": f"Looking for colonies with SAM 3.1 ('{prompt}')… {len(seg_result.boxes)} found" + (" (retried)" if retry_used else ""),
+                        "values": {"prompt_used": prompt, "boxes": len(seg_result.boxes), "retry": retry_used, "experimental": experimental},
+                        "decided_by": "model",
+                    })
                 elif fname == "measure":
                     if seg_result is None:
                         result = {"error": "call segment first"}
                     else:
+                        _emit({"type": "step", "step": "measure", "status": "running", "message": f"Measuring {len(seg_result.boxes)} colonies…", "values": {}, "decided_by": "rule"})
                         masks = seg_result.decoded_masks()
                         # plate diameter from Python, never from model
+                        _emit({"type": "step", "step": "plate", "status": "running", "message": "Detecting plate…", "values": {}, "decided_by": "rule"})
                         try:
                             from labvision.plate import detect_plate_diameter_px as _plate_px
 
@@ -221,10 +271,12 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                             _plate_info = {"plate_detected": True, "plate_diameter_px": _plate_px_val}
                             plate_diameter_px = _plate_px_val
                             plate_detected = True
+                            _emit({"type": "step", "step": "plate", "status": "ok", "message": f"Plate detected: {_plate_px_val:.0f} px = 90 mm ({90.0/_plate_px_val:.4f} mm/px)", "values": {"plate_diameter_px": _plate_px_val, "mm_per_px": round(90.0 / _plate_px_val, 4)}, "decided_by": "rule"})
                         else:
                             rows = measure_mod.measure_masks(masks)
                             _plate_info = {"plate_detected": False}
                             plate_detected = False
+                            _emit({"type": "step", "step": "plate", "status": "warn", "message": "No plate detected — sizes in px", "values": {"plate_diameter_px": None}, "decided_by": "rule"})
                         if "min_diameter_mm" in args:
                             if rows and "diameter_mm" in rows[0]:
                                 rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
@@ -235,9 +287,11 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
                                 continue
                         measure_rows = rows
                         result = {"count": len(rows), "rows": rows[:5], **_plate_info}
+                        _emit({"type": "step", "step": "measure", "status": "ok", "message": f"Measuring {len(rows)} colonies… done", "values": {"count": len(rows)}, "decided_by": "rule"})
                 elif fname == "ask_rephoto":
                     rephoto_reason = args.get("reason", "")
                     result = {"asked": True, "reason": rephoto_reason}
+                    _emit({"type": "step", "step": "ask_rephoto", "status": "warn", "message": f"Ask rephoto: {rephoto_reason}", "values": {"reason": rephoto_reason}, "decided_by": "rule"})
                 elif fname == "characterize":
                     if seg_result is None:
                         result = {"error": "call segment first"}
@@ -341,8 +395,18 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
             pass
 
     count = len(measure_rows) if measure_rows else (len(seg_result.boxes) if seg_result else 0)
+    if count > 300:
+        _emit({"type": "step", "step": "tntc", "status": "warn", "message": "More than 300 colonies → too numerous to count: dilute and re-plate", "values": {"count": count}, "decided_by": "rule"})
+    if "countable" in request.lower():
+        if count < 30:
+            _emit({"type": "step", "step": "countable", "status": "warn", "message": f"Countable check: too few (<30, low statistical reliability) — {count} colonies", "values": {"count": count, "verdict": "too few (<30, low statistical reliability)"}, "decided_by": "rule"})
+        elif count > 300:
+            _emit({"type": "step", "step": "countable", "status": "warn", "message": f"Countable check: TNTC (>300) — {count} colonies", "values": {"count": count, "verdict": "TNTC (>300)"}, "decided_by": "rule"})
+        else:
+            _emit({"type": "step", "step": "countable", "status": "ok", "message": f"Countable check: countable (30-300) — {count} colonies", "values": {"count": count, "verdict": "countable (30-300)"}, "decided_by": "rule"})
     # TNTC: >300
     count_display = "Too numerous to count (>300 CFU): dilute and re-plate" if count > 300 else f"{count} objects"
+    _emit({"type": "step", "step": "report", "status": "running", "message": "Writing report…", "values": {}, "decided_by": "model"})
     has_mm = bool(measure_rows and "diameter_mm" in measure_rows[0])
     if measure_rows:
         ds = [r["diameter_px"] for r in measure_rows]
@@ -414,6 +478,16 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         rephoto_line=rephoto_line,
         char_section=char_section,
     )
+    if experimental:
+        report += "\nExperimental — not benchmarked (colour filter)."
+    if "countable" in request.lower():
+        if count < 30:
+            report += "\nCountable: too few (<30, low statistical reliability)"
+        elif count > 300:
+            report += "\nCountable: TNTC (>300)"
+        else:
+            report += "\nCountable: countable (30-300)"
+    _emit({"type": "step", "step": "report", "status": "ok", "message": "Report ready", "values": {}, "decided_by": "model"})
 
     # verification payload for app
     mm_per_px = (90.0 / plate_diameter_px) if plate_diameter_px else None
@@ -427,6 +501,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         "tntc": count > 300,
         "count": count,
         "seg_boxes": len(seg_result.boxes) if seg_result else 0,
+        "experimental": experimental,
     }
     return {
         "report": report,
@@ -437,4 +512,6 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True) -> d
         "assistant_note": locals().get("assistant_note", ""),
         "seg": {"boxes": len(seg_result.boxes) if seg_result else 0, "width": seg_result.width if seg_result else 0, "height": seg_result.height if seg_result else 0},
         "verification": verification,
+        "experimental": experimental,
+        "prompt_used": prompt_used,
     }

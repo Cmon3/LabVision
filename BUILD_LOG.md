@@ -65,6 +65,7 @@ Summary (Oct 31 Session 4, measured features + honest grouping):
 | 2026-11-03 | S6 Step 3: web/ frontend (HTML+CSS+JS, no build) — lab instrument theme, drop/camera/examples/mic/canvas/tabs | Colors ink/muted/accent/ok/warn/fail + light/dark, Bricolage/Source Sans/JetBrains, canvas viewer masks+boxes+click-correct (scaled coords), mic Web Audio 24k WAV → /transcribe, 70 tests green. |
 | 2026-11-03 | Fix: round masks at (x1,y1) + load_dotenv + [hidden] + footer “For research…” | Masks now box-sized at box origin (fill ~0.77 not 1.0 on 14684), clip hack removed; 70 tests. |
 | 2026-11-03 | S7 Step 1: POST /api/analyze_stream SSE + live progress (decided_by badge) | Streaming text/event-stream with step running→ok/warn/fail + final result; frontend fetch ReadableStream renders spinner→check live; colour/countable attribute handled as experimental; 70 tests. |
+| 2026-11-03 | Honesty fix: analyze_stream via agent on_event, no hardcoded plan/prompt — Muse decides | agent run_agent(on_event) emits real tool calls (model) / results (rule); server removes keyword routing, forwards via asyncio queue+thread; report from Muse + Python numbers; test asserts model events only from Muse; 71 tests. |
 
 ---
 Summary (Nov 3 Session 5, ship it):
