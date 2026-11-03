@@ -48,26 +48,48 @@ def test_segmentation_decoded_resize():
     assert int(arr.sum()) > 0
 
 
-def test_mask_clipping_to_box():
-    # synthetic: mask covers whole image but box is small -> clipped
-    box = Box(x1=10, y1=10, x2=20, y2=20)  # 10x10=100
-    seg = Segmentation(boxes=[box], raw_masks=["10,10,!dummy"], width=100, height=100, cached=False)
-    # patch decode_mask to return full image mask
+def test_synthetic_circular_mask_in_box():
+    # synthetic circular mask the size of its box, placed at box origin
+    box = Box(x1=10, y1=20, x2=30, y2=40)  # 20x20
+    seg = Segmentation(boxes=[box], raw_masks=["20,20,!dummy"], width=100, height=100)
     import labvision.segment as segmod
 
     orig = segmod.decode_mask
 
     def fake(payload, w, h):
-        return np.ones((100, 100), dtype=np.uint8)
+        # 20x20 circular mask (radius 7) -> fill ratio ~0.38, round colony-like
+        yy, xx = np.ogrid[:h, :w]
+        cx, cy = (w - 1) / 2, (h - 1) / 2
+        return ((xx - cx) ** 2 + (yy - cy) ** 2 <= 7**2).astype(np.uint8)
 
     segmod.decode_mask = fake
     try:
-        arr = seg.decoded_masks(clip_to_box_ratio=2.0)
+        arr = seg.decoded_masks()
         assert arr.shape == (1, 100, 100)
-        # full would be 10000, box 100, ratio 2 => clipped to 100
-        assert int(arr[0].sum()) == 100
-        # without clipping, would be 10000
-        arr_no = seg.decoded_masks(clip_to_box_ratio=0)
-        assert int(arr_no[0].sum()) == 10000
+        # mask sum equals small mask sum
+        small_sum = int(fake("", 20, 20).sum())
+        assert int(arr[0].sum()) == small_sum
+        # placed at box origin, not at 0,0
+        assert not arr[0, 20, 10]  # top-left corner of box is outside circle
+        # center of box at (20,30) -> should be True
+        assert arr[0, 30, 20]
+        # outside box is zero
+        assert int(arr[0, :20, :].sum()) == 0
+        assert int(arr[0, 40:, :].sum()) == 0
+        assert int(arr[0, :, :10].sum()) == 0
+        assert int(arr[0, :, 30:].sum()) == 0
+        # fill ratio inside box ~ pi r^2 / box area
+        box_area = 20 * 20
+        ratio = small_sum / box_area
+        assert 0.3 < ratio < 0.9
+        # also test resize tolerance: mask 22x22 into 20x20 box (diff 2px) should resize
+        def fake2(payload, w, h):
+            return np.ones((22, 22), dtype=np.uint8)
+
+        segmod.decode_mask = fake2
+        arr2 = seg.decoded_masks()
+        assert arr2.shape == (1, 100, 100)
+        # resized to 20x20 => 400
+        assert int(arr2[0].sum()) == 400
     finally:
         segmod.decode_mask = orig

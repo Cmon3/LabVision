@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from bench.datasets import list_bbbc005
-from labvision.config import AGAR_CLIP_RATIO, AGAR_PROMPT, AGAR_TILING
+from labvision.config import AGAR_PROMPT, AGAR_TILING
 from labvision.measure import measure_masks
 from labvision.segment import segment
 from labvision.tiling import segment_tiled
@@ -58,7 +58,7 @@ def run_one(path: Path, prompt: str, true_count: int | None, tiling: int = 1):
         seg = segment(path.read_bytes(), prompt)
     else:
         seg = segment_tiled(path.read_bytes(), prompt, tiling=tiling)
-    masks = seg.decoded_masks(clip_to_box_ratio=AGAR_CLIP_RATIO)
+    masks = seg.decoded_masks()
     rows = measure_masks(masks)
     pred = len(rows)
     err = abs(pred - true_count) if true_count is not None else None

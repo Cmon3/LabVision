@@ -4,7 +4,6 @@ AGAR_ALT_PROMPT = "colonies"
 AGAR_TILING = 1
 AGAR_OVERLAP = 0.15
 AGAR_NMS_IOU = 0.5
-AGAR_CLIP_RATIO = 2.0
 AGAR_PLATE_CROP = False
 
 # Morphotype clustering: global feature scales computed on dev split (GT boxes + Otsu, 316 colonies, 19 plates)

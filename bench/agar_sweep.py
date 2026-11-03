@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from labvision.config import AGAR_CLIP_RATIO
 from labvision.plate import crop_to_plate
 from labvision.segment import segment
 from labvision.tiling import segment_tiled
@@ -97,7 +96,6 @@ def main():
         f'AGAR_TILING = {best[2]}\n'
         f"AGAR_OVERLAP = 0.15\n"
         f"AGAR_NMS_IOU = 0.5\n"
-        f"AGAR_CLIP_RATIO = 2.0\n"
         f"AGAR_PLATE_CROP = False\n"
     )
     # eval on test with best

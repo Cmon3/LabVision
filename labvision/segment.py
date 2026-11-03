@@ -45,11 +45,12 @@ class Segmentation:
         d = asdict(self)
         return d
 
-    def decoded_masks(self, clip_to_box_ratio: float = 2.0) -> np.ndarray:
-        """Decode all masks to (N, H, W) bool array resized to image size.
+    def decoded_masks(self, *args, **kwargs) -> np.ndarray:
+        """Decode all masks to (N, H, W) bool array.
 
-        Each raw_mask is "H,W,ENC..." -> decode to HxW then resize to (height,width).
-        If a mask's area is much larger than its box (ratio), clip to box bounds.
+        SAM returns each mask as a raster the size of its box at (x1,y1).
+        We place the HxW raster at the box origin in a full-size zero image.
+        Resize only if H,W differ from box size by a few px.
         """
         if not self.raw_masks:
             return np.zeros((0, self.height, self.width), dtype=bool)
@@ -61,28 +62,62 @@ class Segmentation:
                 small = decode_mask(payload, w, h)
             except Exception:
                 continue
+            # full-frame mask (legacy) -> use as is
             if small.shape[0] == self.height and small.shape[1] == self.width:
-                arr = small.astype(bool)
-            else:
-                try:
-                    from PIL import Image
-
-                    im = Image.fromarray((small * 255).astype(np.uint8))
-                    resized = im.resize((self.width, self.height), Image.NEAREST)
-                    arr = np.array(resized) > 127
-                except Exception:
-                    arr = small.astype(bool)
-            # clip to box if mask much larger than box
-            if i < len(self.boxes) and clip_to_box_ratio and arr.size:
+                decoded.append(small.astype(bool))
+                continue
+            # box-anchored mask
+            if i < len(self.boxes):
                 b = self.boxes[i]
-                box_area = max(0, b.x2 - b.x1) * max(0, b.y2 - b.y1)
-                mask_area = int(arr.sum())
-                if box_area > 0 and mask_area > clip_to_box_ratio * box_area:
-                    clipped = np.zeros_like(arr)
-                    x1, y1, x2, y2 = max(0, b.x1), max(0, b.y1), min(self.width, b.x2), min(self.height, b.y2)
-                    clipped[y1:y2, x1:x2] = arr[y1:y2, x1:x2]
-                    arr = clipped
-            decoded.append(arr)
+                bw = b.x2 - b.x1
+                bh = b.y2 - b.y1
+                # resize if off by a few px
+                if small.shape[0] != bh or small.shape[1] != bw:
+                    if abs(small.shape[0] - bh) <= 5 and abs(small.shape[1] - bw) <= 5:
+                        try:
+                            from PIL import Image
+
+                            im = Image.fromarray((small.astype(np.uint8) * 255))
+                            small = np.array(im.resize((bw, bh), Image.NEAREST)) > 127
+                        except Exception:
+                            pass
+                arr = np.zeros((self.height, self.width), dtype=bool)
+                # clamp box to image bounds
+                x1 = max(0, b.x1)
+                y1 = max(0, b.y1)
+                x2 = min(self.width, b.x2)
+                y2 = min(self.height, b.y2)
+                # source region in small that maps to clamped box
+                # if box was clamped, we need to offset in small
+                sx1 = x1 - b.x1
+                sy1 = y1 - b.y1
+                sx2 = sx1 + (x2 - x1)
+                sy2 = sy1 + (y2 - y1)
+                # also handle small larger/smaller after resize mismatch
+                sx1 = max(0, sx1)
+                sy1 = max(0, sy1)
+                sx2 = min(small.shape[1], sx2)
+                sy2 = min(small.shape[0], sy2)
+                # adjust dest if source was clipped
+                dx1 = x1 + max(0, b.x1 - x1)
+                dy1 = y1 + max(0, b.y1 - y1)
+                # but with clamping above, sx already accounts; compute actual paste size
+                h_paste = sy2 - sy1
+                w_paste = sx2 - sx1
+                if h_paste > 0 and w_paste > 0:
+                    # ensure dest fits
+                    dx1 = x1
+                    dy1 = y1
+                    # if small had different size,sx/sy already limited
+                    arr[dy1 : dy1 + h_paste, dx1 : dx1 + w_paste] = small[sy1:sy2, sx1:sx2]
+                decoded.append(arr)
+            else:
+                # no box: treat as full-frame if possible, else place at 0,0
+                arr = np.zeros((self.height, self.width), dtype=bool)
+                h0 = min(small.shape[0], self.height)
+                w0 = min(small.shape[1], self.width)
+                arr[:h0, :w0] = small[:h0, :w0].astype(bool)
+                decoded.append(arr)
         if not decoded:
             return np.zeros((0, self.height, self.width), dtype=bool)
         return np.stack(decoded)
