@@ -13,6 +13,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 from labvision import measure as measure_mod
 from labvision import qc as qc_mod
 from labvision.config import AGAR_PROMPT
