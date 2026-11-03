@@ -3,7 +3,7 @@
 Plate photo + plain request → colony count you can audit.
 
 ![Demo — AGAR 14684.jpg: 55 true, 56 predicted](docs/img/demo.png)
-![Landing — AI counts. Technicians decide.](docs/img/landing.png)
+![Landing — Colony counts you can audit.](docs/img/landing.png)
 ![Live — agent streams its work, Muse decides prompts](docs/img/live.png)
 
 ## Built during the hackathon
@@ -136,7 +136,7 @@ Keys are read from environment only and never logged. Every external call is cac
 
 ## Manual check (for Simon)
 
-1. `python server.py` → `/` shows landing with hero “AI counts. Technicians decide.”
+1. `python server.py` → `/` shows landing with hero “Colony counts you can audit.”
 2. **Try an example plate** opens `/app?example=14684` with plate loaded.
 3. Press **Run** → live steps tick one by one (spinner → ✓/!/✕ with model/rule badge).
 4. Click a suggested chip (e.g. “count black colonies (experimental)”) → request box fills.
