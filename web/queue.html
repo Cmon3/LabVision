@@ -98,7 +98,18 @@ function reasonChip(r){
   else if(r.toLowerCase().includes("low conf")||r.includes("low confidence")) cls="low";
   else if(r==="blurry"||r==="glare"||r==="empty") cls=r;
   else if(r==="experimental"||r==="retry") cls=r;
+  else if(r==="needs_rephoto"||r==="report_refused"||r==="awaiting_signoff") cls="blurry";
   return `<span class="reason-chip ${cls}">${r}</span>`;
+}
+function handoffText(r){
+  if(!r.handoff) return "";
+  const h=r.handoff;
+  let t="";
+  if(h.rule==="needs_rephoto") t=`Needs re-photo: ${h.why||h.request||""}`;
+  else if(h.rule==="report_refused") t=`Report refused: ${h.why||""}`;
+  else if(h.rule==="awaiting_signoff") t=`Awaiting sign-off: ${h.request||""}`;
+  if(t) return `<div class="small muted" style="margin-top:4px">${t}</div>`;
+  return "";
 }
 function fmtTime(iso){
   if(!iso) return "—";
@@ -120,16 +131,18 @@ function render(data){
     const tr=document.createElement("tr");
     tr.className=(r.reviewed_by?"approved":r.needs_review?"needs-review":"");
     const conf = r.mean_confidence!=null ? r.mean_confidence.toFixed(2) : "—";
+    const needsResume = r.queue_status==="paused" || (r.escalation && (r.escalation.rule==="needs_rephoto" || r.escalation.rule==="report_refused"));
+    const handoff = handoffText(r);
     tr.innerHTML=`
       <td class="mono">${r.plate_id||r.run_id}</td>
       <td class="small">${fmtTime(r.time)}</td>
       <td>${r.location||"—"}</td>
       <td>${r.count}</td>
       <td class="mono small">${conf}</td>
-      <td><span class="pill ${pillClass(r.status)}">${r.status||'ok'}</span></td>
+      <td><span class="pill ${pillClass(r.status)}">${r.status||'ok'}</span>${handoff}</td>
       <td>${r.reasons && r.reasons.length ? r.reasons.map(reasonChip).join(" ") : '<span class="muted">—</span>'}</td>
       <td>${r.reviewed_by ? `${r.reviewed_by}<br><span class="small muted">${fmtTime(r.reviewed_at)}</span>` : "—"}</td>
-      <td>${r.reviewed_by ? '<span class="small muted">approved</span>' : `<button class="btn btn-sm approve-btn" data-id="${r.run_id}">Approve</button>`}</td>
+      <td>${r.reviewed_by ? '<span class="small muted">approved</span>' : (needsResume ? `<button class="btn btn-sm resume-btn" data-id="${r.run_id}">Resume</button>` : `<button class="btn btn-sm approve-btn" data-id="${r.run_id}">Approve</button>`)}</td>
     `;
     tr.addEventListener("click",(e)=>{
       if(e.target.closest(".approve-btn")) return;
@@ -147,6 +160,18 @@ function render(data){
           if(!res.ok) throw new Error(await res.text());
           await fetchQueue();
         }catch(err){ alert("Approve failed: "+err.message.slice(0,200)); btn.disabled=false; btn.textContent="Approve"; }
+      });
+    }
+    const rbtn=tr.querySelector(".resume-btn");
+    if(rbtn){
+      rbtn.addEventListener("click", async (e)=>{
+        e.stopPropagation();
+        rbtn.disabled=true; rbtn.textContent="…";
+        try{
+          const res=await fetch(`/api/runs/${encodeURIComponent(r.run_id)}/resume`,{method:"POST"});
+          if(!res.ok) throw new Error(await res.text());
+          await fetchQueue();
+        }catch(err){ alert("Resume failed: "+err.message.slice(0,200)); rbtn.disabled=false; rbtn.textContent="Resume"; }
       });
     }
     tbody.appendChild(tr);
