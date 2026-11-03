@@ -253,6 +253,19 @@ def get_queue_items(runs_dir: Path | None = None) -> list[dict]:
     return items
 
 def approve_run(run_id: str, reviewer: str, runs_dir: Path | None = None) -> dict:
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id):
+        raise ValueError("invalid run_id")
+    runs_dir_resolved = Path(runs_dir).resolve() if runs_dir else _get_runs_dir().resolve()
+    p_check = (runs_dir_resolved / run_id).resolve()
+    try:
+        if not p_check.is_relative_to(runs_dir_resolved):
+            raise ValueError("invalid run_id")
+    except AttributeError:
+        try:
+            p_check.relative_to(runs_dir_resolved)
+        except ValueError:
+            raise ValueError("invalid run_id")
     if runs_dir is None:
         runs_dir = _get_runs_dir()
     else:

@@ -350,24 +350,38 @@ function renderTrace(trace){
 }
 
 function renderMeasurements(rows, csvUrl){
-  const tbody=measureTable.querySelector("tbody"); tbody.innerHTML="";
-  if(!rows.length){ tbody.innerHTML='<tr><td colspan="5" class="muted">No measurements</td></tr>'; csvLink.hidden=true; return; }
+  const tbody=measureTable.querySelector("tbody"); tbody.textContent="";
+  if(!rows.length){ const tr=document.createElement("tr"); const td=document.createElement("td"); td.colSpan=5; td.className="muted"; td.textContent="No measurements"; tr.appendChild(td); tbody.appendChild(tr); csvLink.hidden=true; return; }
   for(const r of rows){
     const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${r.id??""}</td><td>${r.area_px??r.area??""}</td><td>${r.diameter_px??r.diameter??""}</td><td>${r.area_mm2??""}</td><td>${r.diameter_mm??""}</td>`;
+    const td0=document.createElement("td"); td0.textContent=String(r.id ?? ""); tr.appendChild(td0);
+    const td1=document.createElement("td"); td1.textContent=String(r.area_px ?? r.area ?? ""); tr.appendChild(td1);
+    const td2=document.createElement("td"); td2.textContent=String(r.diameter_px ?? r.diameter ?? ""); tr.appendChild(td2);
+    const td3=document.createElement("td"); td3.textContent=String(r.area_mm2 ?? ""); tr.appendChild(td3);
+    const td4=document.createElement("td"); td4.textContent=String(r.diameter_mm ?? ""); tr.appendChild(td4);
     tbody.appendChild(tr);
   }
   if(csvUrl){ csvLink.href=csvUrl; csvLink.hidden=false; } else csvLink.hidden=true;
 }
 
 function renderColonyTypes(types){
-  if(!types.length){ colonyTypesEl.innerHTML='<p class="muted">No colony types — add "characterize" to your request (e.g. "count and characterize colonies").</p>'; return; }
-  let html='<div class="table-wrap"><table><thead><tr><th>Type</th><th>Description</th><th>Count</th><th>Mean Ø (px)</th></tr></thead><tbody>';
+  colonyTypesEl.textContent="";
+  if(!types.length){ const p=document.createElement("p"); p.className="muted"; p.textContent='No colony types — add "characterize" to your request (e.g. "count and characterize colonies").'; colonyTypesEl.appendChild(p); return; }
+  const wrap=document.createElement("div"); wrap.className="table-wrap";
+  const table=document.createElement("table");
+  const thead=document.createElement("thead"); const trh=document.createElement("tr");
+  ["Type","Description","Count","Mean Ø (px)"].forEach(txt=>{ const th=document.createElement("th"); th.textContent=txt; trh.appendChild(th); });
+  thead.appendChild(trh); table.appendChild(thead);
+  const tbody=document.createElement("tbody");
   for(const t of types){
-    html+=`<tr><td>${t.label||t.type||""}</td><td>${t.description||""}</td><td>${t.count??""}</td><td>${t.mean_diameter_px??t.mean_diameter??""}</td></tr>`;
+    const tr=document.createElement("tr");
+    const td0=document.createElement("td"); td0.textContent=String(t.label || t.type || ""); tr.appendChild(td0);
+    const td1=document.createElement("td"); td1.textContent=String(t.description || ""); tr.appendChild(td1);
+    const td2=document.createElement("td"); td2.textContent=String(t.count ?? ""); tr.appendChild(td2);
+    const td3=document.createElement("td"); td3.textContent=String(t.mean_diameter_px ?? t.mean_diameter ?? ""); tr.appendChild(td3);
+    tbody.appendChild(tr);
   }
-  html+='</tbody></table></div>';
-  colonyTypesEl.innerHTML=html;
+  table.appendChild(tbody); wrap.appendChild(table); colonyTypesEl.appendChild(wrap);
 }
 
 function loadViewerImages(data){

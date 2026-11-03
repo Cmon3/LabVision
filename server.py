@@ -26,6 +26,12 @@ from labvision.config import AGAR_PROMPT
 from labvision.runlog import new_run_id, save_run
 from labvision.segment import segment, segment_point
 import os
+import re
+import logging
+
+logger = logging.getLogger("labvision")
+
+_RUN_ID_RE = re.compile(r"^(run_[0-9]{8}T[0-9]{6}(_[a-z0-9]+)?|[A-Za-z0-9_-]{1,64})$")
 
 def _get_runs_dir() -> Path:
     return Path(os.environ.get("LABVISION_RUNS_DIR", "runs"))
@@ -33,6 +39,53 @@ def _get_runs_dir() -> Path:
 RUNS_DIR = _get_runs_dir()
 CACHE_DIR = Path("runs/cache")
 WEB_DIR = Path("web")
+
+def _validate_run_id(run_id: str) -> Path:
+    if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
+        raise HTTPException(status_code=400, detail={"error": "invalid run_id"})
+    runs_dir = _get_runs_dir().resolve()
+    p = (runs_dir / run_id).resolve()
+    try:
+        if not p.is_relative_to(runs_dir):
+            raise HTTPException(status_code=400, detail={"error": "invalid run_id"})
+    except AttributeError:
+        # Python <3.9 fallback
+        try:
+            p.relative_to(runs_dir)
+        except ValueError:
+            raise HTTPException(status_code=400, detail={"error": "invalid run_id"})
+    return p
+
+def _validate_image_bytes(data: bytes, max_bytes: int = 15_000_000) -> None:
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=413, detail={"error": "payload too large", "hint": f"Max {max_bytes//1_000_000} MB"})
+    if len(data) < 10:
+        raise HTTPException(status_code=400, detail={"error": "invalid image", "hint": "Empty file"})
+    # MIME sniff + Pillow verify
+    try:
+        from PIL import Image as _I
+        import io as _io
+        im = _I.open(_io.BytesIO(data))
+        im.verify()
+        # reopen for size/format check (verify() closes)
+        im2 = _I.open(_io.BytesIO(data))
+        fmt = (im2.format or "").upper()
+        if fmt not in ("JPEG", "JPG", "PNG", "TIFF", "TIF"):
+            raise HTTPException(status_code=400, detail={"error": "invalid image", "hint": "Use JPG, PNG or TIFF"})
+        w, h = im2.size
+        if w <= 0 or h <= 0 or w * h > 50_000_000:
+            raise HTTPException(status_code=400, detail={"error": "invalid image", "hint": "Image too large"})
+        # TIFF already converted elsewhere, but we still allow
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail={"error": "invalid image", "hint": "Upload JPG/PNG/TIFF"})
+
+def _validate_audio_bytes(data: bytes, max_bytes: int = 5_000_000) -> None:
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=413, detail={"error": "payload too large", "hint": "Max 5 MB audio"})
+    if len(data) < 10:
+        raise HTTPException(status_code=400, detail={"error": "invalid audio", "hint": "Empty file"})
 # escalation helpers (lazy import to avoid cycle)
 def _escalate_needs_rephoto(run_id: str, reason: str, plate_id: str | None, what_was_done: str):
     try:
@@ -415,6 +468,7 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
     data = await image.read()
     if not data:
         raise HTTPException(status_code=400, detail={"error": "no image", "hint": "Upload a JPG/PNG/TIFF."})
+    _validate_image_bytes(data, max_bytes=15_000_000)
 
     async def gen():
         import asyncio
@@ -575,7 +629,8 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
                     }
                 loop.call_soon_threadsafe(q.put_nowait, {"type": "result", "data": api_res})
             except Exception as e:
-                loop.call_soon_threadsafe(q.put_nowait, {"type": "error", "error": str(e)[:400], "hint": "Check API keys and try again."})
+                logger.exception("analyze_stream failed: %s", e)
+                loop.call_soon_threadsafe(q.put_nowait, {"type": "error", "error": "internal error", "hint": "Check API keys and try again."})
             finally:
                 loop.call_soon_threadsafe(q.put_nowait, None)
 
@@ -600,16 +655,14 @@ async def api_analyze(image: UploadFile = File(...), request: str = Form("")):
     data = await image.read()
     if not data:
         raise HTTPException(status_code=400, detail={"error": "no image", "hint": "Upload a JPG/PNG/TIFF."})
+    _validate_image_bytes(data, max_bytes=15_000_000)
     try:
         return _analyze_image(data, request)
     except HTTPException:
         raise
     except Exception as e:
-        msg = str(e)
-        hint = "Check API keys in .env and try again."
-        if "META_API_KEY" in msg or "BASETEN" in msg:
-            hint = "Missing API key — set META_API_KEY and BASETEN_API_KEY in .env."
-        return JSONResponse(status_code=500, content={"error": msg[:400], "hint": hint})
+        logger.exception("api_analyze failed")
+        return JSONResponse(status_code=500, content={"error": "internal error", "hint": "Check API keys in .env and try again."})
 
 
 @app.post("/api/correct", summary="Correct detection (add/remove/manual)", tags=["analysis"])
@@ -625,6 +678,7 @@ async def api_correct(payload: dict):
     y2 = payload.get("y2")
     if not run_id:
         raise HTTPException(status_code=400, detail={"error": "missing run_id", "hint": "Send {run_id, x, y, mode: add|remove} or {run_id, x1,y1,x2,y2}"})
+    _validate_run_id(run_id)
     if mode == "add" and x1 is not None and y1 is not None and x2 is not None and y2 is not None:
         # box prompt
         pass
@@ -854,16 +908,14 @@ async def api_transcribe(audio: UploadFile = File(...)):
     data = await audio.read()
     if not data:
         raise HTTPException(status_code=400, detail={"error": "no audio", "hint": "Record or upload WAV."})
+    _validate_audio_bytes(data, max_bytes=5_000_000)
     try:
         from labvision.voice import transcribe
         text = transcribe(data)
         return {"transcript": text}
     except Exception as e:
-        msg = str(e)
-        hint = "Check META_API_KEY and audio format (WAV mono 16-bit 24kHz)."
-        if "META_API_KEY" in msg:
-            hint = "Missing META_API_KEY in .env."
-        return JSONResponse(status_code=500, content={"error": msg[:400], "hint": hint})
+        logger.exception("transcribe failed")
+        return JSONResponse(status_code=500, content={"error": "internal error", "hint": "Check META_API_KEY and audio format (WAV mono 16-bit 24kHz)."})
 
 
 @app.get("/api/examples", summary="List example plates", tags=["analysis"])
@@ -890,11 +942,12 @@ def api_queue():
         from labvision.queue import get_queue_items
         return get_queue_items(_get_runs_dir())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("queue failed")
+        raise HTTPException(status_code=500, detail={"error": "internal error"})
 
 @app.get("/api/runs/{run_id}", summary="Get run detail (image, masks, boxes, trace)", tags=["queue"])
 def api_run_detail(run_id: str):
-    p = _get_runs_dir() / run_id
+    p = _validate_run_id(run_id)
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
     run_json = p / "run.json"
@@ -965,10 +1018,12 @@ def api_run_detail(run_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("api_run_detail failed")
+        raise HTTPException(status_code=500, detail={"error": "internal error"})
 
 @app.post("/api/runs/{run_id}/approve", summary="Approve a run (human decision)", tags=["queue"])
 def api_approve(run_id: str, payload: dict):
+    _validate_run_id(run_id)
     reviewer = payload.get("reviewer") or payload.get("reviewed_by") or "technician"
     if not reviewer or not str(reviewer).strip():
         raise HTTPException(status_code=400, detail={"error": "missing reviewer", "hint": "Send {reviewer: name}"})
@@ -978,7 +1033,8 @@ def api_approve(run_id: str, payload: dict):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="run not found")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("approve failed")
+        raise HTTPException(status_code=500, detail={"error": "internal error"})
 
 @app.post("/api/queue/approve_clean", summary="Approve all clean plates (no review reasons)", tags=["queue"])
 def api_approve_clean(payload: dict | None = None):
@@ -996,11 +1052,13 @@ def api_approve_clean(payload: dict | None = None):
                     pass
         return {"approved": approved, "count": len(approved)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("approve_clean failed")
+        raise HTTPException(status_code=500, detail={"error": "internal error"})
 
 
 @app.post("/api/runs/{run_id}/review", summary="Review report (approve or reject with notes) — sign-off", tags=["queue"])
 def api_review(run_id: str, payload: dict):
+    _validate_run_id(run_id)
     decision = (payload.get("decision") or payload.get("action") or "").lower()
     if decision not in ("approve", "approved", "reject", "rejected"):
         raise HTTPException(status_code=400, detail={"error": "decision must be approve or reject", "hint": "Send {decision: approve|reject, reviewer, notes}"})
@@ -1042,6 +1100,7 @@ def api_review(run_id: str, payload: dict):
 
 @app.post("/api/runs/{run_id}/guidance", summary="Provide guidance for report_refused escalation", tags=["queue"])
 def api_guidance(run_id: str, payload: dict):
+    _validate_run_id(run_id)
     reviewer = payload.get("reviewer") or payload.get("reviewed_by") or "technician"
     notes = payload.get("notes") or payload.get("guidance") or ""
     if not notes.strip():
@@ -1057,6 +1116,7 @@ def api_guidance(run_id: str, payload: dict):
 
 @app.post("/api/runs/{run_id}/resume", summary="Resume a paused/needs_input/awaiting_signoff run", tags=["queue"])
 def api_resume(run_id: str):
+    _validate_run_id(run_id)
     from labvision.progress import load_progress, resume_payload
     from labvision.agent import resume_run
     try:
@@ -1073,11 +1133,13 @@ def api_resume(run_id: str):
         out = resume_run(run_id)
         return out
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("resume failed")
+        raise HTTPException(status_code=500, detail={"error": "internal error"})
 
 
 @app.get("/api/runs/{run_id}/progress", summary="Get run progress (messages + status)", tags=["queue"])
 def api_progress(run_id: str):
+    _validate_run_id(run_id)
     from labvision.progress import load_progress
     try:
         prog = load_progress(run_id, base=_get_runs_dir())
@@ -1128,11 +1190,13 @@ def api_export_csv(from_: str | None = Query(None, alias="from"), to: str | None
         from fastapi.responses import Response
         return Response(content=csv_bytes, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=export.csv"})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("export.csv failed")
+        raise HTTPException(status_code=500, detail={"error": "internal error"})
 
 
 @app.get("/api/runs/{run_id}/image.png", summary="Get run image", tags=["runs"])
 def get_image(run_id: str):
+    _validate_run_id(run_id)
     p = _get_runs_dir() / run_id / "image.png"
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
@@ -1141,6 +1205,7 @@ def get_image(run_id: str):
 
 @app.get("/api/runs/{run_id}/masks.png", summary="Get run masks overlay", tags=["runs"])
 def get_masks(run_id: str):
+    _validate_run_id(run_id)
     p = _get_runs_dir() / run_id / "masks.png"
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
@@ -1149,6 +1214,7 @@ def get_masks(run_id: str):
 
 @app.get("/api/runs/{run_id}/results.csv", summary="Get run measurements CSV", tags=["runs"])
 def get_csv(run_id: str):
+    _validate_run_id(run_id)
     p = _get_runs_dir() / run_id / "results.csv"
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")

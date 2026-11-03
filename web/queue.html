@@ -99,17 +99,24 @@ function reasonChip(r){
   else if(r==="blurry"||r==="glare"||r==="empty") cls=r;
   else if(r==="experimental"||r==="retry") cls=r;
   else if(r==="needs_rephoto"||r==="report_refused"||r==="awaiting_signoff") cls="blurry";
-  return `<span class="reason-chip ${cls}">${r}</span>`;
+  const span=document.createElement("span");
+  span.className=`reason-chip ${cls}`;
+  span.textContent=r;
+  return span;
 }
 function handoffText(r){
-  if(!r.handoff) return "";
+  if(!r.handoff) return null;
   const h=r.handoff;
   let t="";
   if(h.rule==="needs_rephoto") t=`Needs re-photo: ${h.why||h.request||""}`;
   else if(h.rule==="report_refused") t=`Report refused: ${h.why||""}`;
   else if(h.rule==="awaiting_signoff") t=`Awaiting sign-off: ${h.request||""}`;
-  if(t) return `<div class="small muted" style="margin-top:4px">${t}</div>`;
-  return "";
+  if(!t) return null;
+  const div=document.createElement("div");
+  div.className="small muted";
+  div.style.marginTop="4px";
+  div.textContent=t;
+  return div;
 }
 function fmtTime(iso){
   if(!iso) return "—";
@@ -123,27 +130,34 @@ function render(data){
   else if(currentFilter==="approved") filtered=data.filter(d=>d.reviewed_by);
   else filtered=data;
   if(!filtered.length){
-    tbody.innerHTML=`<tr><td colspan="9" class="muted">No plates — queue is empty</td></tr>`;
+    const tr=document.createElement("tr"); const td=document.createElement("td"); td.colSpan=9; td.className="muted"; td.textContent="No plates — queue is empty"; tr.appendChild(td); tbody.appendChild(tr);
     return;
   }
-  tbody.innerHTML="";
+  tbody.textContent="";
   for(const r of filtered){
     const tr=document.createElement("tr");
     tr.className=(r.reviewed_by?"approved":r.needs_review?"needs-review":"");
     const conf = r.mean_confidence!=null ? r.mean_confidence.toFixed(2) : "—";
     const needsResume = r.queue_status==="paused" || (r.escalation && (r.escalation.rule==="needs_rephoto" || r.escalation.rule==="report_refused"));
-    const handoff = handoffText(r);
-    tr.innerHTML=`
-      <td class="mono">${r.plate_id||r.run_id}</td>
-      <td class="small">${fmtTime(r.time)}</td>
-      <td>${r.location||"—"}</td>
-      <td>${r.count}</td>
-      <td class="mono small">${conf}</td>
-      <td><span class="pill ${pillClass(r.status)}">${r.status||'ok'}</span>${handoff}</td>
-      <td>${r.reasons && r.reasons.length ? r.reasons.map(reasonChip).join(" ") : '<span class="muted">—</span>'}</td>
-      <td>${r.reviewed_by ? `${r.reviewed_by}<br><span class="small muted">${fmtTime(r.reviewed_at)}</span>` : "—"}</td>
-      <td>${r.reviewed_by ? '<span class="small muted">approved</span>' : (needsResume ? `<button class="btn btn-sm resume-btn" data-id="${r.run_id}">Resume</button>` : `<button class="btn btn-sm approve-btn" data-id="${r.run_id}">Approve</button>`)}</td>
-    `;
+    // plate id
+    const td0=document.createElement("td"); td0.className="mono"; td0.textContent=r.plate_id||r.run_id; tr.appendChild(td0);
+    const td1=document.createElement("td"); td1.className="small"; td1.textContent=fmtTime(r.time); tr.appendChild(td1);
+    const td2=document.createElement("td"); td2.textContent=r.location||"—"; tr.appendChild(td2);
+    const td3=document.createElement("td"); td3.textContent=String(r.count ?? ""); tr.appendChild(td3);
+    const td4=document.createElement("td"); td4.className="mono small"; td4.textContent=conf; tr.appendChild(td4);
+    const td5=document.createElement("td");
+    const pill=document.createElement("span"); pill.className=`pill ${pillClass(r.status)}`; pill.textContent=r.status||'ok'; td5.appendChild(pill);
+    const handoffEl=handoffText(r); if(handoffEl) td5.appendChild(handoffEl);
+    tr.appendChild(td5);
+    const td6=document.createElement("td");
+    if(r.reasons && r.reasons.length){ r.reasons.forEach(rc=> td6.appendChild(reasonChip(rc))); } else { const span=document.createElement("span"); span.className="muted"; span.textContent="—"; td6.appendChild(span); }
+    tr.appendChild(td6);
+    const td7=document.createElement("td");
+    if(r.reviewed_by){ td7.textContent=r.reviewed_by; const br=document.createElement("br"); td7.appendChild(br); const small=document.createElement("span"); small.className="small muted"; small.textContent=fmtTime(r.reviewed_at); td7.appendChild(small); } else { td7.textContent="—"; }
+    tr.appendChild(td7);
+    const td8=document.createElement("td");
+    if(r.reviewed_by){ const span=document.createElement("span"); span.className="small muted"; span.textContent="approved"; td8.appendChild(span); } else if(needsResume){ const btn=document.createElement("button"); btn.className="btn btn-sm resume-btn"; btn.dataset.id=r.run_id; btn.textContent="Resume"; td8.appendChild(btn); } else { const btn=document.createElement("button"); btn.className="btn btn-sm approve-btn"; btn.dataset.id=r.run_id; btn.textContent="Approve"; td8.appendChild(btn); }
+    tr.appendChild(td8);
     tr.addEventListener("click",(e)=>{
       if(e.target.closest(".approve-btn")) return;
       window.location.href=`/app?run_id=${encodeURIComponent(r.run_id)}`;
@@ -186,7 +200,9 @@ async function fetchQueue(){
     const data=await r.json();
     render(data);
   }catch(e){
-    document.getElementById("queueBody").innerHTML=`<tr><td colspan="9" class="muted">Queue unavailable: ${e.message}</td></tr>`;
+    const tbody=document.getElementById("queueBody");
+    tbody.textContent="";
+    const tr=document.createElement("tr"); const td=document.createElement("td"); td.colSpan=9; td.className="muted"; td.textContent=`Queue unavailable: ${e.message}`; tr.appendChild(td); tbody.appendChild(tr);
   }
 }
 document.getElementById("approveCleanBtn").addEventListener("click", async ()=>{
