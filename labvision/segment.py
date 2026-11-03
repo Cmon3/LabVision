@@ -239,6 +239,43 @@ def segment(
     return Segmentation(boxes=boxes, raw_masks=raw_masks, width=w, height=h)
 
 
+def _build_point_prompt(x: int, y: int, w: int, h: int, obj_id: int = 1) -> str:
+    return f"<0f>{obj_id}< |point;x={x};y={y};w={w};h={h}|>"
+
+def _build_box_prompt(x1: int, y1: int, x2: int, y2: int, w: int, h: int, obj_id: int = 1) -> str:
+    return f"<0f>{obj_id}< |box;x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h}|>"
+
+def segment_point(
+    image_bytes: bytes,
+    x: int,
+    y: int,
+    x2: int | None = None,
+    y2: int | None = None,
+    use_cache: bool = True,
+) -> Segmentation:
+    """Segment one image at a point (or small box around point). x,y are image pixels."""
+    # get image size for w,h
+    try:
+        from PIL import Image
+        import io as _io
+
+        im = Image.open(_io.BytesIO(image_bytes))
+        w, h = im.size
+    except Exception:
+        w, h = 1024, 1024
+    # build prompt: if x2/y2 given, use box of ~20px around point, else point
+    if x2 is not None and y2 is not None:
+        # small box 20px
+        x1 = max(0, x - 10)
+        y1 = max(0, y - 10)
+        x2c = min(w, x + 10)
+        y2c = min(h, y + 10)
+        prompt = _build_box_prompt(x1, y1, x2c, y2c, w, h)
+    else:
+        prompt = _build_point_prompt(int(x), int(y), w, h)
+    # cache key uses prompt as is
+    return segment(image_bytes, prompt, use_cache=use_cache)
+
 def segment_file(image_path: str | Path, prompt: str) -> Segmentation:
     """Convenience wrapper for T2 probe: read file -> segment."""
     return segment(Path(image_path).read_bytes(), prompt)

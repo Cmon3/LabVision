@@ -17,7 +17,8 @@ Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entr
 - **Self-check retry** — if SAM returns 0 but the image is sharp, retry once with the alternate prompt `colonies`.
 - **Descriptive colony-type table** — Python features (Lab colour minus agar background, circularity, log diameter, texture) are clustered in Python (fixed global scales, average linkage); Muse Spark Open writes a short description per group from a constrained vocabulary (colours, shapes, margins, elevations, surfaces). The table is descriptive only.
 - **Voice input** — click the mic, say “count colonies larger than 2 mm” hands-free (gloves, biosafety cabinet); Muse Voice Transcribe fills the request box.
-- **Audit log + CSV** — every run writes `run.json` (inputs, model ids, params, including voice transcript) and `results.csv`.
+- **Human in the loop** — in the Result tab, one click fixes a missed colony (SAM point prompt adds a mask) or removes a false detection; the table, report and CSV update and every edit is logged separately from model output.
+- **Audit log + CSV** — every run writes `run.json` (inputs, model ids, params, including voice transcript and corrections) and `results.csv`.
 
 ## Architecture
 

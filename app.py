@@ -51,7 +51,7 @@ def _friendly_error(e: Exception) -> str:
 
 def process(image, request: str, show_masks: bool = True):
     if image is None:
-        return None, None, pd.DataFrame(), "Upload an image first.", "No run yet.", None
+        return None, None, pd.DataFrame(), "Upload an image first.", "No run yet.", None, {}
     if not request or not request.strip():
         request = "count colonies"
     tmp = Path(tempfile.gettempdir()) / "gradio_input.png"
@@ -63,7 +63,7 @@ def process(image, request: str, show_masks: bool = True):
     try:
         out = run_agent(tmp, request)
     except Exception as e:
-        return None, pd.DataFrame(), pd.DataFrame(), _friendly_error(e), "Run failed.", None
+        return None, pd.DataFrame(), pd.DataFrame(), _friendly_error(e), "Run failed.", None, {}
 
     # overlay
     try:
@@ -113,11 +113,10 @@ def process(image, request: str, show_masks: bool = True):
         else:
             morph_df = None
     except Exception as e:
-        # fallback to agent output
         overlay = Image.open(tmp).convert("RGB")
         df = pd.DataFrame(out.get("rows", []))
         morph_df = None
-        return overlay, df, morph_df if morph_df is not None else pd.DataFrame(), _friendly_error(e), _verification_md(out.get("verification", {}), request), df.to_csv("/tmp/labvision_results.csv", index=False) or "/tmp/labvision_results.csv" if not df.empty else None
+        return overlay, df, morph_df if morph_df is not None else pd.DataFrame(), _friendly_error(e), _verification_md(out.get("verification", {}), request), None, {}
 
     csv_path = None
     if not df.empty:
@@ -125,11 +124,20 @@ def process(image, request: str, show_masks: bool = True):
         csv_path = "/tmp/labvision_results.csv"
 
     ver_md = _verification_md(out.get("verification", {}), request)
-    # combine morph into measurements tab? we return separate for now but app will show in How verified
-    # For measurements tab we show df; morph table will be shown in verified? Actually spec says measurements tab has table+CSV
-    # We'll return morph as part of verified or as separate; here we keep morph in verified text and also return df
-    # To show morph table in app, we could append to df or show separately — we keep morph in report; for now merge morph into verification
-    return overlay, df, morph_df if morph_df is not None else pd.DataFrame(), out.get("report", ""), ver_md, csv_path
+    # state for click-to-correct
+    try:
+        from labvision.segment import Box
+        state = {
+            "image_path": str(tmp),
+            "boxes": [{"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2} for b in seg.boxes],
+            "masks": masks,
+            "request": request,
+            "corrections": [],
+            "image_size": seg.width and seg.height and (seg.width, seg.height) or (Image.open(tmp).size),
+        }
+    except Exception:
+        state = {"image_path": str(tmp), "boxes": [], "masks": None, "request": request, "corrections": []}
+    return overlay, df, morph_df if morph_df is not None else pd.DataFrame(), out.get("report", ""), ver_md, csv_path, state
 
 
 def _verification_md(ver: dict, request: str) -> str:
@@ -146,9 +154,28 @@ def _verification_md(ver: dict, request: str) -> str:
         lines.append(f"3. `measure` → no plate detected — sizes in px — {ver.get('count', 0)} objects — TNTC {ver.get('tntc', False)}")
     if "characterize" in request.lower():
         lines.append("4. `characterize` → Python features clustered, Muse wording per group (descriptive only)")
+    if ver.get("corrections"):
+        lines.append(f"5. `corrections` → {len(ver['corrections'])} human edits (logged separately)")
     lines.append("")
     lines.append(f"Request: `{request}`")
     return "\n".join(lines)
+
+
+def _find_box_at(boxes, x, y):
+    for idx, b in enumerate(boxes):
+        if b.x1 <= x <= b.x2 and b.y1 <= y <= b.y2:
+            return idx
+    return None
+
+def _find_mask_at(masks, x, y):
+    if masks is None or masks.size == 0:
+        return None
+    # masks (N,H,W) bool
+    if 0 <= y < masks.shape[1] and 0 <= x < masks.shape[2]:
+        hits = np.where(masks[:, y, x])[0]
+        if len(hits):
+            return int(hits[0])
+    return None
 
 
 # Examples — only if AGAR images exist locally (never committed)
@@ -166,6 +193,139 @@ for cand in [
 ]:
     if Path(cand).exists() and len(_example_paths) < 3:
         _example_paths.append([cand, "count colonies"])
+
+
+def handle_click(evt: gr.SelectData, mode: str, state: dict, show_masks: bool):
+    if not state or not state.get("image_path"):
+        return None, None, pd.DataFrame(), "Run first, then click to edit.", "No state.", None, state
+    # evt.index is (x, y) in original image pixels (Gradio 5+)
+    try:
+        x, y = int(evt.index[0]), int(evt.index[1])
+    except Exception:
+        return None, None, pd.DataFrame(), "Click coordinates unavailable.", "No verification.", None, state
+    img_path = state["image_path"]
+    boxes = state.get("boxes", [])
+    masks = state.get("masks")
+    request = state.get("request", "count colonies")
+    corrections = state.get("corrections", [])
+
+    # convert to Boxes for logic
+    from labvision.segment import Box
+    box_objs = [Box(b["x1"], b["y1"], b["x2"], b["y2"]) for b in boxes]
+
+    if mode == "Remove colony":
+        # find detection containing click
+        idx = _find_mask_at(masks, x, y) if masks is not None and masks.size else _find_box_at(box_objs, x, y)
+        if idx is None:
+            # try box fallback
+            idx = _find_box_at(box_objs, x, y)
+        if idx is not None:
+            # remove
+            box_objs.pop(idx)
+            if masks is not None and masks.size:
+                masks = np.delete(masks, idx, axis=0)
+            corrections.append({"action": "remove", "x": x, "y": y, "idx": idx})
+        else:
+            return None, None, pd.DataFrame(), f"No colony at ({x},{y}) to remove.", _verification_md({"corrections": corrections}, request), None, state
+    else:  # Add colony
+        try:
+            from labvision.segment import segment_point
+            img_bytes = Path(img_path).read_bytes()
+            seg_new = segment_point(img_bytes, x, y)
+            new_masks = seg_new.decoded_masks()
+            new_boxes = seg_new.boxes
+            if new_boxes and new_masks.size:
+                # take first detection
+                b = new_boxes[0]
+                m = new_masks[0]
+                box_objs.append(b)
+                boxes.append({"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2})
+                if masks is None or not masks.size:
+                    masks = np.expand_dims(m, axis=0)
+                else:
+                    masks = np.concatenate([masks, np.expand_dims(m, axis=0)], axis=0)
+                corrections.append({"action": "add", "x": x, "y": y, "box": {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}})
+            else:
+                return None, None, pd.DataFrame(), f"SAM returned no mask at ({x},{y}).", _verification_md({"corrections": corrections}, request), None, state
+        except Exception as e:
+            return None, None, pd.DataFrame(), _friendly_error(e), _verification_md({"corrections": corrections}, request), None, state
+
+    # re-run measure on corrected set
+    rows = measure_masks(masks) if masks is not None and masks.size else []
+    df = pd.DataFrame(rows) if rows else pd.DataFrame([{"info": "no objects"}])
+    # plate detection for mm
+    try:
+        from labvision.plate import detect_plate_diameter_px
+        from PIL import Image as _Im
+        arr = np.array(_Im.open(img_path).convert("RGB"))
+        pdiam = detect_plate_diameter_px(arr)
+        if pdiam:
+            rows = measure_masks(masks, plate_diameter_px=pdiam, plate_diameter_mm=90.0) if masks.size else []
+            df = pd.DataFrame(rows) if rows else df
+    except Exception:
+        pass
+
+    # morph table recompute if needed
+    morph_df = pd.DataFrame()
+    if "characterize" in request.lower() and box_objs:
+        try:
+            import numpy as _np
+            from labvision.features import extract_features as _feat
+            from labvision.morphotypes import cluster_plate as _clust
+            from labvision.config import MORPHOTYPE_THRESHOLD as _T, MORPHOTYPE_COLOR_WEIGHT as _CW
+            boxes_for_char = [{"x": b.x1, "y": b.y1, "width": b.x2 - b.x1, "height": b.y2 - b.y1} for b in box_objs]
+            if masks is not None and masks.size and masks.shape[0] == len(box_objs):
+                feats = _feat(np.array(Image.open(img_path).convert("RGB")), masks=masks)
+            else:
+                feats = _feat(np.array(Image.open(img_path).convert("RGB")), boxes=boxes_for_char)
+            labels = _clust(feats, threshold=_T, color_weight=_CW)
+            uniq = sorted(set(labels))
+            agg = {}
+            for lab in uniq:
+                lab_char = chr(ord("A") + uniq.index(lab))
+                g_mask = labels == lab
+                count = int(g_mask.sum())
+                g_feats = feats[g_mask]
+                summary = {"lab": g_feats[:, 0:3].mean(axis=0).tolist() if g_feats.size else [], "circularity": float(g_feats[:, 3].mean()) if g_feats.size else 0, "log_diam": float(g_feats[:, 4].mean()) if g_feats.size else 0, "texture": float(g_feats[:, 5].mean()) if g_feats.size else 0}
+                group_boxes = [boxes_for_char[i] for i in range(len(boxes_for_char)) if labels[i] == lab][:6]
+                try:
+                    from labvision.describe import describe_group as _desc
+                    desc = _desc(img_path, group_boxes, feature_summary=summary)
+                except Exception:
+                    desc = {"color": "cream", "shape": "circular", "margin": "entire", "elevation": "convex", "surface": "smooth"}
+                desc_str = f"{desc['color']}, {desc['shape']}, {desc['margin']} margin, {desc['elevation']}, {desc['surface']}"
+                mean_log = float(g_feats[:, 4].mean()) if g_feats.size else 0
+                mean_diam = float(_np.exp(mean_log)) if mean_log else 0
+                agg[lab_char] = {"label": lab_char, "description": desc_str, "count": count, "mean_diameter_px": round(mean_diam, 1)}
+            morph_df = pd.DataFrame(sorted(agg.values(), key=lambda r: r["label"]))
+        except Exception:
+            morph_df = pd.DataFrame()
+
+    # overlay
+    overlay = _overlay(img_path, box_objs, masks, show_masks=show_masks)
+    # report simple
+    count = len(rows)
+    tntc = count > 300
+    count_str = "Too numerous to count (>300 CFU): dilute and re-plate" if tntc else f"{count} objects"
+    report = f"LabVision Report (edited)\nCount: {count_str}\nCorrections: {len(corrections)}\nConfirm with standard microbiological methods."
+    ver_md = _verification_md({"count": count, "tntc": tntc, "seg_boxes": len(box_objs), "corrections": corrections, "qc": {}}, request)
+
+    # log correction in runlog
+    try:
+        from labvision.runlog import save_run
+        from datetime import datetime, timezone
+        run_id = f"correct_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+        save_run("runs", run_id, inputs={"image": str(img_path), "request": request}, model_ids={"sam": "sam-3.1"}, params={"corrections": corrections[-1] if corrections else {}}, results=rows)
+    except Exception:
+        pass
+
+    csv_path = None
+    if not df.empty:
+        df.to_csv("/tmp/labvision_results.csv", index=False)
+        csv_path = "/tmp/labvision_results.csv"
+
+    new_state = {"image_path": img_path, "boxes": [{"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2} for b in box_objs], "masks": masks, "request": request, "corrections": corrections}
+    return overlay, df, morph_df, report, ver_md, csv_path, new_state
 
 
 with gr.Blocks(title="LabVision Copilot") as demo:
@@ -188,7 +348,9 @@ with gr.Blocks(title="LabVision Copilot") as demo:
         with gr.Column(scale=1):
             with gr.Tabs():
                 with gr.Tab("Result"):
-                    out_img = gr.Image(label="Overlay (masks + boxes)")
+                    out_img = gr.Image(label="Overlay (masks + boxes) — click to edit", interactive=False)
+                    edit_mode = gr.Radio(choices=["Add colony", "Remove colony"], value="Add colony", label="Click mode (human in the loop: one click fixes a missed colony)")
+                    gr.Markdown("_After Run, click on the overlay to add/remove a colony. The table, report and CSV update._")
                 with gr.Tab("Measurements"):
                     out_table = gr.Dataframe(label="Measurements (px/mm)")
                     out_csv = gr.File(label="CSV download")
@@ -197,6 +359,8 @@ with gr.Blocks(title="LabVision Copilot") as demo:
                     out_ver = gr.Markdown(label="Verification")
                 with gr.Tab("Report"):
                     out_report = gr.Textbox(label="Report", lines=10)
+
+    state = gr.State(value={})
 
     gr.Markdown("Research/QC quantification. Not a medical device.")
     gr.Markdown("Numbers from Python (`measure.py` + plate detection). Muse Spark Open via Baseten writes interpretation only.")
@@ -207,7 +371,6 @@ with gr.Blocks(title="LabVision Copilot") as demo:
         try:
             from labvision.voice import transcribe as _transcribe
             text = _transcribe(audio)
-            # log transcript (runlog) — best effort
             try:
                 from labvision.runlog import save_run
                 from datetime import datetime, timezone
@@ -221,8 +384,9 @@ with gr.Blocks(title="LabVision Copilot") as demo:
 
     voice_in.change(voice_to_text, inputs=[voice_in], outputs=[inp_req])
 
-    btn.click(process, inputs=[inp_img, inp_req, inp_masks], outputs=[out_img, out_table, morph_table, out_report, out_ver, out_csv])
-    inp_masks.change(process, inputs=[inp_img, inp_req, inp_masks], outputs=[out_img, out_table, morph_table, out_report, out_ver, out_csv])
+    btn.click(process, inputs=[inp_img, inp_req, inp_masks], outputs=[out_img, out_table, morph_table, out_report, out_ver, out_csv, state])
+    inp_masks.change(process, inputs=[inp_img, inp_req, inp_masks], outputs=[out_img, out_table, morph_table, out_report, out_ver, out_csv, state])
+    out_img.select(handle_click, inputs=[edit_mode, state, inp_masks], outputs=[out_img, out_table, morph_table, out_report, out_ver, out_csv, state])
 
 if __name__ == "__main__":
     demo.launch()
