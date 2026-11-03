@@ -117,9 +117,15 @@ th{background:var(--bg); font-weight:600; color:var(--muted); text-transform:upp
 .timeline li{display:flex; gap:10px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg)}
 .tl-icon{width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:.75rem; font-weight:700; flex-shrink:0; color:#fff}
 .tl-icon.ok{background:var(--ok)} .tl-icon.warn{background:var(--warn)} .tl-icon.fail{background:var(--fail)}
+.tl-icon.running{border:2px solid var(--line); border-top-color:var(--accent); background:var(--surface); color:transparent; animation:spin .7s linear infinite}
 .tl-body{flex:1; min-width:0}
 .tl-name{font-weight:600; font-size:.9rem}
 .tl-kv{font-family:"JetBrains Mono",monospace; font-size:.78rem; color:var(--muted); word-break:break-word}
+.tl-badge{font:600 .68rem "JetBrains Mono",monospace; padding:2px 6px; border-radius:999px; border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em; flex-shrink:0; height:fit-content}
+.tl-badge.model{background:color-mix(in srgb, var(--accent) 14%, var(--surface)); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 30%, transparent)}
+.tl-badge.rule{background:var(--bg); color:var(--muted)}
+.tl-badge.human{background:color-mix(in srgb, var(--teal) 14%, var(--surface)); color:var(--teal); border-color:color-mix(in srgb, var(--teal) 30%, transparent)}
+#liveProgress{margin:12px 0}
 
 /* footer */
 .ftr{max-width:1200px; margin:0 auto; padding:16px 20px 24px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:.82rem; color:var(--muted); border-top:1px solid var(--line); margin-top:12px}

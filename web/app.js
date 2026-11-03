@@ -4,6 +4,7 @@ const runBtn = $("#runBtn"), requestInput = $("#requestInput"), leftStatus = $("
 const micBtn = $("#micBtn"), micStatus = $("#micStatus");
 const exampleThumbs = $("#exampleThumbs");
 const emptyState = $("#emptyState"), loadingState = $("#loadingState"), loadingText = $("#loadingText"), errorState = $("#errorState"), errorMsg = $("#errorMsg"), errorHint = $("#errorHint"), resultState = $("#resultState");
+const liveProgress = $("#liveProgress"), liveSteps = $("#liveSteps");
 const countBig = $("#countBig"), countSub = $("#countSub"), statusPill = $("#statusPill");
 const viewer = $("#viewer"), canvasWrap = $("#canvasWrap"), clickSpinner = $("#clickSpinner");
 const masksToggle = $("#masksToggle"), boxesToggle = $("#boxesToggle");
@@ -20,6 +21,7 @@ let ctx = viewer.getContext("2d");
 function showState(which){
   emptyState.hidden = which!=="empty";
   loadingState.hidden = which!=="loading";
+  if(liveProgress) liveProgress.hidden = which!=="loading";
   errorState.hidden = which!=="error";
   resultState.hidden = which!=="result";
 }
@@ -136,22 +138,104 @@ async function loadExamples(){
 }
 loadExamples();
 
+const _liveMap = new Map();
+function clearLive(){
+  _liveMap.clear();
+  if(liveSteps) liveSteps.innerHTML="";
+}
+function upsertLiveStep(evt){
+  if(!liveSteps) return;
+  let li = _liveMap.get(evt.step);
+  if(!li){
+    li=document.createElement("li");
+    const icon=document.createElement("div"); icon.className="tl-icon running"; icon.textContent="…";
+    const body=document.createElement("div"); body.className="tl-body";
+    const name=document.createElement("div"); name.className="tl-name";
+    const kv=document.createElement("div"); kv.className="tl-kv";
+    const badge=document.createElement("span"); badge.className="tl-badge "+(evt.decided_by||"rule"); badge.textContent=evt.decided_by||"";
+    body.append(name, kv);
+    li.append(icon, body, badge);
+    liveSteps.appendChild(li);
+    _liveMap.set(evt.step, {li, icon, name, kv, badge});
+  }
+  const e=_liveMap.get(evt.step);
+  e.icon.className="tl-icon "+(evt.status==="running"?"running":evt.status||"ok");
+  e.icon.textContent=evt.status==="running"?"…":evt.status==="ok"?"✓":evt.status==="warn"?"!":"✕";
+  e.name.textContent=evt.message||evt.step;
+  const vals=evt.values||{};
+  const parts=[];
+  if(vals.blur_score!==undefined) parts.push("blur "+vals.blur_score);
+  if(vals.glare_fraction!==undefined) parts.push("glare "+vals.glare_fraction);
+  if(vals.prompt) parts.push("prompt "+vals.prompt);
+  if(vals.prompt_used) parts.push("prompt "+vals.prompt_used);
+  if(vals.boxes!==undefined) parts.push(vals.boxes+" boxes");
+  if(vals.count!==undefined) parts.push("count "+vals.count);
+  if(vals.plate_diameter_px) parts.push("plate "+vals.plate_diameter_px+"px");
+  if(vals.mm_per_px) parts.push(vals.mm_per_px+" mm/px");
+  if(vals.verdict) parts.push(vals.verdict);
+  e.kv.textContent=parts.join(" · ");
+  e.badge.className="tl-badge "+(evt.decided_by||"rule");
+  e.badge.textContent=evt.decided_by||"";
+  e.badge.hidden=!evt.decided_by;
+}
+
+async function doAnalyzeStream(fd){
+  const r=await fetch("/api/analyze_stream", {method:"POST", body:fd});
+  if(!r.ok || !r.body || !r.headers.get("content-type")?.includes("text/event-stream")){
+    throw new Error("stream not available");
+  }
+  const reader=r.body.getReader();
+  const decoder=new TextDecoder();
+  let buf="";
+  let finalData=null;
+  while(true){
+    const {value, done}=await reader.read();
+    if(done) break;
+    buf+=decoder.decode(value, {stream:true});
+    let idx;
+    while((idx=buf.indexOf("\n\n"))!==-1){
+      const chunk=buf.slice(0, idx);
+      buf=buf.slice(idx+2);
+      for(const line of chunk.split("\n")){
+        if(!line.startsWith("data:")) continue;
+        const obj=JSON.parse(line.slice(5).trim());
+        if(obj.type==="step"){
+          upsertLiveStep(obj);
+        } else if(obj.type==="result"){
+          finalData=obj.data;
+        } else if(obj.type==="error"){
+          throw new Error(obj.error||"stream error");
+        }
+      }
+    }
+  }
+  if(!finalData) throw new Error("no result in stream");
+  return finalData;
+}
+
 async function doAnalyze(){
   if(!selectedFile){ setError("No image", "Drop an image or pick an example."); return; }
   const req = requestInput.value.trim() || "count colonies";
-  showState("loading"); loadingText.textContent="Analysing… check_quality → segment → measure";
+  showState("loading"); loadingText.textContent="Analysing…";
+  clearLive();
   runBtn.disabled=true; setLeftStatus("");
+  const fd=new FormData();
+  fd.append("image", selectedFile, selectedFile._name||"image.jpg");
+  fd.append("request", req);
   try{
-    const fd=new FormData();
-    fd.append("image", selectedFile, selectedFile._name||"image.jpg");
-    fd.append("request", req);
-    const r=await fetch("/api/analyze", {method:"POST", body:fd});
-    if(!r.ok){
-      let j={}; try{ j=await r.json(); }catch(_){ j={error:await r.text()}; }
-      const detail=j.detail||j;
-      throw new Error(detail.error||detail.detail||("HTTP "+r.status));
+    let data;
+    try{
+      data=await doAnalyzeStream(fd);
+    } catch(_){
+      // fallback to non-stream
+      const r=await fetch("/api/analyze", {method:"POST", body:fd});
+      if(!r.ok){
+        let j={}; try{ j=await r.json(); }catch(_){ j={error:await r.text()}; }
+        const detail=j.detail||j;
+        throw new Error(detail.error||detail.detail||("HTTP "+r.status));
+      }
+      data=await r.json();
     }
-    const data=await r.json();
     lastResult=data;
     renderResult(data);
     showState("result");
@@ -168,7 +252,7 @@ runBtn.addEventListener("click", doAnalyze);
 function renderResult(data){
   const isT=isTNTC(data.status, data.count);
   countBig.textContent = data.count_label || (isT ? "TNTC >300" : data.count+" CFU");
-  countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h} · ${data.duration_ms||""} ms` : "";
+  countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h} · ${data.duration_ms||""} ms` + (data.experimental?" · experimental — not benchmarked":"") : (data.experimental?"experimental — not benchmarked":"");
   statusPill.textContent = data.status==="tntc" ? "TNTC — dilute & re-plate" : data.status==="blurry" ? "blurry — re-photo" : data.status==="glare" ? "glare" : data.status==="empty" ? "empty" : "OK";
   statusPill.className="pill "+pillClass(data.status);
   loadViewerImages(data);
