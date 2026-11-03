@@ -87,6 +87,28 @@ cameraCaptureBtn.addEventListener("click", ()=>{
   stopCamera();
 });
 
+// suggested questions chips
+const _suggested = [
+  "count colonies",
+  "count colonies larger than 2 mm",
+  "count colonies smaller than 1 mm",
+  "is this plate countable?",
+  "measure colony sizes",
+  "count black colonies (experimental)",
+  "count yellow colonies (experimental)",
+];
+(function initChips(){
+  const c = document.getElementById("suggestedChips");
+  if(!c) return;
+  for(const txt of _suggested){
+    const b=document.createElement("button");
+    b.type="button"; b.className="sug-chip"+(txt.includes("experimental")?" experimental":"");
+    b.textContent=txt; b.title=txt.includes("experimental")?"Experimental — not benchmarked":"Click to fill request";
+    b.addEventListener("click", ()=>{ requestInput.value=txt.replace(" (experimental)",""); requestInput.focus(); });
+    c.appendChild(b);
+  }
+})();
+
 async function loadExamples(){
   try{
     const r=await fetch("/api/examples"); const list=await r.json();
@@ -121,16 +143,26 @@ async function loadExamples(){
       wrap.appendChild(lab);
       exampleThumbs.appendChild(wrap);
     }
-    // preselect first example so demo starts with one click
-    if(list.length){
+    // ?example=14684 preload (from landing)
+    const qp=new URLSearchParams(location.search).get("example");
+    let preselect=list[0];
+    if(qp){
+      const found=list.find(e=> e.name.includes(qp) || e.path.includes(qp));
+      if(found) preselect=found;
+    }
+    if(preselect){
       try{
-        const ex=list[0];
-        const rr=await fetch("/api/examples/file?path="+encodeURIComponent(ex.path));
+        const rr=await fetch("/api/examples/file?path="+encodeURIComponent(preselect.path));
         if(rr.ok){
           const blob=await rr.blob();
-          setFile(blob, ex.name||"example.jpg");
-          setLeftStatus("Example "+(ex.name||"")+ " ready — click Run");
-          document.querySelector(".thumb")?.classList.add("is-selected");
+          setFile(blob, preselect.name||"example.jpg");
+          setLeftStatus("Example "+(preselect.name||"")+ " ready — click Run");
+          // mark selected thumb after render (next tick)
+          setTimeout(()=>{
+            const thumbs=document.querySelectorAll(".thumb");
+            for(const t of thumbs){ if(t.alt===preselect.name || t.title===preselect.name) t.classList.add("is-selected"); }
+            if(!document.querySelector(".thumb.is-selected")) document.querySelector(".thumb")?.classList.add("is-selected");
+          }, 100);
         }
       }catch(_){}
     }

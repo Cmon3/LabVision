@@ -54,6 +54,7 @@
       <textarea id="requestInput" rows="2" placeholder="count colonies larger than 2 mm">count colonies</textarea>
       <button id="micBtn" class="mic" type="button" aria-label="Record request" title="Record request">🎙</button>
     </div>
+    <div id="suggestedChips" class="chips sug-chips" aria-label="suggested questions"></div>
     <div id="micStatus" class="mic-status" aria-live="polite"></div>
 
     <button id="runBtn" class="btn btn-primary" type="button">Run</button>
@@ -63,7 +64,12 @@
   <!-- RIGHT -->
   <section class="panel right" aria-label="result">
     <div id="emptyState" class="empty">
-      <p>Pick an example or drop an image, then <strong>Run</strong>.</p>
+      <p><strong>Get started in 3 steps:</strong></p>
+      <ol class="empty-steps">
+        <li><strong>1.</strong> Pick an example plate or upload your own</li>
+        <li><strong>2.</strong> Pick or say a question (e.g. “count colonies”)</li>
+        <li><strong>3.</strong> Press <strong>Run</strong> — the agent shows its work live</li>
+      </ol>
       <p class="muted">Numbers come from deterministic <code>measure.py</code>, never the LLM.</p>
     </div>
 
@@ -90,12 +96,12 @@
       </div>
 
       <div class="viewer-toolbar">
-        <label class="chk"><input type="checkbox" id="masksToggle" checked> Masks</label>
-        <label class="chk"><input type="checkbox" id="boxesToggle" checked> Boxes</label>
+        <label class="chk" title="Toggle red mask overlay"><input type="checkbox" id="masksToggle" checked> Masks</label>
+        <label class="chk" title="Toggle green box outlines"><input type="checkbox" id="boxesToggle" checked> Boxes</label>
         <div class="seg"></div>
         <span class="label">Click to correct:</span>
-        <button id="modeAdd" class="btn btn-sm is-active" type="button">Add colony</button>
-        <button id="modeRemove" class="btn btn-sm" type="button">Remove</button>
+        <button id="modeAdd" class="btn btn-sm is-active" type="button" title="Click on the image to add a colony the agent missed">Add colony</button>
+        <button id="modeRemove" class="btn btn-sm" type="button" title="Click a detected colony to remove it">Remove</button>
       </div>
 
       <div id="canvasWrap" class="canvas-wrap">

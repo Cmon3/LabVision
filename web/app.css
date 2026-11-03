@@ -23,6 +23,10 @@ a{color:var(--teal)}
 .hdr-sub{margin:2px 0 0; color:var(--muted); font-size:.88rem}
 .chips{display:flex; gap:8px; flex-wrap:wrap}
 .chip{font-family:"JetBrains Mono",monospace; font-size:.72rem; padding:4px 8px; border-radius:999px; border:1px solid var(--line); background:var(--bg); color:var(--muted)}
+.sug-chips{margin-top:6px}
+.sug-chip{font:500 .82rem "Source Sans 3",sans-serif; padding:6px 10px; border-radius:999px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; transition:border-color .15s, background .15s}
+.sug-chip:hover{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--surface))}
+.sug-chip.experimental{border-color:var(--warn); color:var(--warn)}
 
 /* layout */
 .layout{max-width:1200px; margin:0 auto; padding:20px; display:grid; grid-template-columns:380px 1fr; gap:20px; align-items:start}
@@ -81,6 +85,8 @@ a{color:var(--teal)}
 /* empty/loading/error */
 .empty{padding:28px 10px; text-align:center; color:var(--muted)}
 .empty code{font-family:"JetBrains Mono",monospace; font-size:.85em}
+.empty-steps{list-style:none; padding:0; margin:12px 0; display:flex; flex-direction:column; gap:6px; text-align:left; max-width:360px; margin-left:auto; margin-right:auto}
+.empty-steps li{padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); font-size:.88rem}
 .loading{display:flex; gap:12px; align-items:center; padding:18px; color:var(--muted)}
 .spinner{width:22px; height:22px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}

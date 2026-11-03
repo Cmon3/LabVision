@@ -33,10 +33,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "segment",
-            "description": "Segment image for a noun phrase (one concept, e.g. 'round spot', 'cell'). For colour-filtered requests like 'black colonies', include the colour in the prompt (e.g. 'black round spot'); such prompts are experimental and not benchmarked.",
+            "description": "Segment image for a noun phrase (one concept). For colonies use 'round spot' (benchmarked: 11.8% error, 7/20 exact on AGAR) and for cells use 'cell' (benchmarked: w1 MAE 5.48). For colour-filtered requests like 'black colonies', include the colour in the prompt (e.g. 'black round spot'); such prompts are experimental and not benchmarked.",
             "parameters": {
                 "type": "object",
-                "properties": {"prompt": {"type": "string", "description": "short noun phrase, may include colour like 'black round spot'"}},
+                "properties": {"prompt": {"type": "string", "description": "short noun phrase; use 'round spot' for colonies and 'cell' for cells; may include colour like 'black round spot' for experimental filtering"}},
                 "required": ["prompt"],
             },
         },
