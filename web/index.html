@@ -5,150 +5,258 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LabVision Copilot</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/web/app.css">
+<style>
+/* App layout — Session 10 mock */
+.app-main{max-width:1360px;margin:0 auto;padding:24px 28px;display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.app-left{flex:1 1 340px;min-width:0;max-width:400px;display:flex;flex-direction:column;gap:20px}
+.app-right{flex:999 1 600px;min-width:0;display:flex;flex-direction:column;gap:16px}
+.topbar{background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar-inner{max-width:1360px;margin:0 auto;padding:14px 28px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+.nav{display:flex;gap:6px;font-size:15px}
+.nav a{color:var(--ink);text-decoration:none;padding:8px 14px;border-radius:8px}
+.nav a.active{background:var(--ink);color:var(--bg);font-weight:600}
+.nav-badge{background:var(--accent-soft);color:var(--accent-soft-text);font-family:"JetBrains Mono",monospace;font-size:13px;padding:1px 7px;border-radius:999px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.card-kicker{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)}
+.plate-thumb{width:64px;height:64px;border-radius:10px;background:#2A2F2C;display:grid;place-items:center;flex-shrink:0;overflow:hidden}
+.plate-thumb img{width:100%;height:100%;object-fit:cover}
+.btn-row{display:flex;gap:8px}
+.btn-row .btn{flex:1}
+.mic-btn{width:48px;border-radius:8px;border:none;background:var(--teal);color:#fff;display:grid;place-items:center;flex-shrink:0}
+.mic-btn svg{width:20px;height:20px}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.chip-row .sug-chip{font:400 14px "Source Sans 3",sans-serif;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.chip-row .sug-chip.experimental{border:1px dashed var(--accent);background:var(--surface);color:var(--accent-soft-text)}
+.run-btn{font:600 17px "Source Sans 3",sans-serif;padding:14px;border-radius:10px;border:none;background:var(--ink);color:var(--bg)}
+.verified-grid{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:4px 10px;align-items:start;font-size:14px}
+.verified-grid .icon{font-weight:700}
+.result-header{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 24px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between}
+.big-count{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:72px;line-height:1}
+.viewer-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.viewer-toolbar-top{padding:10px 14px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.seg-control{display:flex;gap:4px;background:var(--bg);padding:4px;border-radius:9px}
+.seg-control .btn{padding:7px 12px;border-radius:6px;border:none;background:transparent;color:var(--muted);font:600 14px "Source Sans 3",sans-serif}
+.seg-control .btn.is-active{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.info-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.info-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:6px}
+@media(max-width:860px){.app-main{padding:16px}.app-left{max-width:none}.big-count{font-size:56px}}
+</style>
 </head>
 <body>
-<header class="hdr">
-  <div class="hdr-inner">
-    <div class="hdr-title">
-      <h1>LabVision Copilot</h1>
-      <p class="hdr-sub">Plate · colony quantification · research / QC</p>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div style="display:flex;align-items:center;gap:12px">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="12" r="3" fill="var(--accent)"/><circle cx="20" cy="18" r="4" fill="var(--accent)"/><circle cx="13" cy="21" r="2" fill="var(--accent)"/></svg>
+      <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:20px">LabVision Copilot</span>
     </div>
-    <div class="chips" aria-label="models">
-      <a class="chip" href="/app/queue" style="text-decoration:none">Queue</a>
-      <span class="chip">SAM 3.1</span>
-      <span class="chip">Muse Spark Open</span>
-      <span class="chip">Muse Voice Transcribe</span>
-    </div>
+    <nav class="nav">
+      <a href="/app" class="active">Analyse</a>
+      <a href="/app/queue">Review queue <span id="queueBadge" class="nav-badge" hidden>0</span></a>
+      <a href="/">About</a>
+    </nav>
   </div>
 </header>
 
-<main class="layout">
+<main class="app-main">
   <!-- LEFT -->
-  <section class="panel left" aria-label="input">
-    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Drop image or click to choose file">
-      <div class="dz-icon">＋</div>
-      <p class="dz-text"><strong>Drop image here</strong> or click to choose</p>
-      <p class="dz-hint">JPG, PNG, TIFF — plate or micrograph</p>
-      <input id="fileInput" type="file" accept="image/*" hidden>
-      <img id="previewThumb" hidden alt="">
+  <aside class="app-left">
+    <div class="card">
+      <span class="card-kicker">1 · Plate</span>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="plate-thumb" id="plateThumb"><svg viewBox="0 0 64 64" width="64" height="64"><rect width="64" height="64" rx="10" fill="#2A2F2C"/><circle cx="32" cy="32" r="26" fill="#56553A" stroke="#C9B46A" stroke-width="2"/><g fill="#D9C98E"><circle cx="24" cy="22" r="3"/><circle cx="38" cy="28" r="4"/><circle cx="28" cy="40" r="3"/><circle cx="42" cy="42" r="2"/></g></svg></div>
+        <div style="display:flex;flex-direction:column;min-width:0">
+          <span id="plateName" style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">No plate yet</span>
+          <span id="plateMeta" style="color:var(--muted-2);font-size:14px">Upload or pick an example</span>
+        </div>
+      </div>
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Drop image or click to choose file">
+        <div class="dz-icon">＋</div>
+        <p class="dz-text"><strong>Drop image here</strong> or click to choose</p>
+        <p class="dz-hint">JPG, PNG, TIFF — plate or micrograph</p>
+        <input id="fileInput" type="file" accept="image/*" hidden>
+        <img id="previewThumb" hidden alt="">
+      </div>
+      <div class="btn-row">
+        <button id="uploadBtn" class="btn" type="button">Upload</button>
+        <button id="cameraBtn" class="btn" type="button">Camera</button>
+        <button id="cameraCaptureBtn" class="btn" type="button" hidden>Capture</button>
+        <button id="cameraCancelBtn" class="btn" type="button" hidden>Cancel</button>
+      </div>
+      <div id="cameraWrap" hidden><video id="cameraVideo" autoplay playsinline muted></video><canvas id="cameraCanvas" hidden></canvas></div>
+      <div id="examples" class="examples" aria-label="examples"><span class="label">Examples</span><div id="exampleThumbs" class="thumbs"></div></div>
+      <!-- keep original cameraBtn id for JS compatibility -->
+      <button id="cameraBtn_hidden" hidden></button>
     </div>
 
-    <div class="row gap">
-      <button id="cameraBtn" class="btn btn-ghost" type="button">Use camera</button>
-      <button id="cameraCaptureBtn" class="btn btn-ghost" type="button" hidden>Capture</button>
-      <button id="cameraCancelBtn" class="btn btn-ghost" type="button" hidden>Cancel</button>
-    </div>
-    <div id="cameraWrap" hidden>
-      <video id="cameraVideo" autoplay playsinline muted></video>
-      <canvas id="cameraCanvas" hidden></canvas>
-    </div>
-
-    <div id="examples" class="examples" aria-label="examples">
-      <span class="label">Examples</span>
-      <div id="exampleThumbs" class="thumbs"></div>
+    <div class="card">
+      <label for="requestInput" class="card-kicker">2 · Request</label>
+      <div style="display:flex;gap:10px;align-items:stretch">
+        <input id="requestInput" type="text" value="count colonies" placeholder="count colonies larger than 2 mm" style="flex:1;min-width:0;font:400 16px 'Source Sans 3',sans-serif;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+        <button id="micBtn" class="mic-btn" type="button" aria-label="Speak the request"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      </div>
+      <div id="suggestedChips" class="chip-row"></div>
+      <div id="micStatus" class="mic-status" aria-live="polite" style="font-size:13px;color:var(--muted-2);min-height:1em"></div>
+      <button id="runBtn" class="run-btn" type="button">Run analysis</button>
+      <div id="leftStatus" class="left-status" aria-live="polite" style="font-size:.85rem;min-height:1.2em"></div>
+      <textarea id="requestInput_hidden" hidden></textarea>
     </div>
 
-    <label class="label" for="requestInput">Request</label>
-    <div class="request-row">
-      <textarea id="requestInput" rows="2" placeholder="count colonies larger than 2 mm">count colonies</textarea>
-      <button id="micBtn" class="mic" type="button" aria-label="Record request" title="Record request">🎙</button>
+    <div class="card" id="verifiedCard">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+        <span class="card-kicker">How it was verified</span>
+        <span id="verifiedTime" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted-2)"></span>
+      </div>
+      <div id="liveProgress"><ol id="liveSteps" class="verified-grid" style="list-style:none;padding:0;margin:0"></ol></div>
+      <ol id="traceList" class="timeline" hidden></ol>
+      <div id="emptyState" class="empty" style="padding:8px 0;text-align:left"><p class="muted small" style="margin:0">Run an analysis to see verification steps.</p></div>
+      <div id="loadingState" class="loading" hidden><div class="spinner"></div><p id="loadingText">Analysing…</p></div>
+      <div id="errorState" class="error-box" hidden role="alert"><p id="errorMsg"></p><p id="errorHint" class="muted"></p></div>
     </div>
-    <div id="suggestedChips" class="chips sug-chips" aria-label="suggested questions"></div>
-    <div id="micStatus" class="mic-status" aria-live="polite"></div>
-
-    <button id="runBtn" class="btn btn-primary" type="button">Run</button>
-    <div id="leftStatus" class="left-status" aria-live="polite"></div>
-  </section>
+  </aside>
 
   <!-- RIGHT -->
-  <section class="panel right" aria-label="result">
-    <div id="emptyState" class="empty">
-      <p><strong>Get started in 3 steps:</strong></p>
-      <ol class="empty-steps">
-        <li><strong>1.</strong> Pick an example plate or upload your own</li>
-        <li><strong>2.</strong> Pick or say a question (e.g. “count colonies”)</li>
-        <li><strong>3.</strong> Press <strong>Run</strong> — the agent shows its work live</li>
-      </ol>
-      <p class="muted">Numbers come from deterministic <code>measure.py</code>, never the LLM.</p>
-    </div>
-
-    <div id="loadingState" class="loading" hidden>
-      <div class="spinner" aria-hidden="true"></div>
-      <p id="loadingText">Analysing…</p>
-    </div>
-    <div id="liveProgress" hidden>
-      <ol id="liveSteps" class="timeline"></ol>
-    </div>
-
-    <div id="errorState" class="error-box" hidden role="alert">
-      <p id="errorMsg"></p>
-      <p id="errorHint" class="muted"></p>
-    </div>
-
+  <section class="app-right">
     <div id="resultState" hidden>
-      <div class="hero">
-        <div>
-          <div id="countBig" class="count-big">—</div>
-          <div id="countSub" class="muted mono"></div>
+      <div class="result-header">
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <span id="countBig" class="big-count">—</span>
+          <div style="display:flex;flex-direction:column">
+            <span id="requestSubtitle" style="font-weight:600;font-size:18px"></span>
+            <span id="countSub" class="muted mono" style="font-size:14px;color:var(--muted-2)"></span>
+          </div>
         </div>
-        <span id="statusPill" class="pill">ok</span>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span id="statusPill" class="pill">ok</span>
+          <button id="approveBtn" class="btn" style="background:var(--ok);color:#fff;border-color:var(--ok)" hidden>Approve</button>
+        </div>
       </div>
 
-      <div class="viewer-toolbar">
-        <label class="chk" title="Toggle red mask overlay"><input type="checkbox" id="masksToggle" checked> Masks</label>
-        <label class="chk" title="Toggle green box outlines"><input type="checkbox" id="boxesToggle" checked> Boxes</label>
-        <div class="seg"></div>
-        <span class="label">Click to correct:</span>
-        <button id="modeAdd" class="btn btn-sm is-active" type="button" title="Click or drag a box to add a colony via SAM">Add colony</button>
-        <button id="modeRemove" class="btn btn-sm" type="button" title="Click a detected colony to remove it">Remove</button>
-        <button id="modeManual" class="btn btn-sm" type="button" title="Mark manually: adds +1 manual count, not measured">Mark manually</button>
+      <div class="viewer-card" style="margin-top:16px">
+        <div class="viewer-toolbar-top">
+          <div class="seg-control" role="group" aria-label="Correction mode">
+            <button id="modeView" class="btn is-active" type="button">View</button>
+            <button id="modeAdd" class="btn" type="button">Add · draw a box</button>
+            <button id="modeRemove" class="btn" type="button">Remove</button>
+            <button id="modeManual" class="btn" type="button" style="display:none">Mark manually</button>
+          </div>
+          <div style="display:flex;gap:16px;font-size:14px;color:var(--muted)">
+            <label class="chk" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="masksToggle" checked> Masks</label>
+            <label class="chk" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="boxesToggle" checked> Boxes</label>
+          </div>
+        </div>
+        <div id="canvasWrap" class="canvas-wrap" style="border:none;border-top:1px solid var(--line);border-radius:0">
+          <canvas id="viewer"></canvas>
+          <canvas id="dragOverlay" width="0" height="0" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;"></canvas>
+          <div id="clickSpinner" class="click-spinner" hidden></div>
+        </div>
+        <p class="muted small" style="padding:10px 14px;margin:0">Masks teal, human edits amber. Click or drag to correct.</p>
       </div>
 
-      <div id="canvasWrap" class="canvas-wrap">
-        <canvas id="viewer"></canvas>
-        <canvas id="dragOverlay" width="0" height="0" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;"></canvas>
-        <div id="clickSpinner" class="click-spinner" hidden></div>
+      <div class="info-cards" style="margin-top:16px">
+        <div class="info-card"><span class="card-kicker">Sizes</span><span id="sizesMedian" style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:600">—</span><span id="sizesRange" style="color:var(--muted-2);font-size:14px">No data yet</span></div>
+        <div class="info-card"><span class="card-kicker">Report</span><span id="reportSummary" style="font-size:15px">No report yet.</span></div>
+        <div class="info-card"><span class="card-kicker">Export</span><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><a id="csvLink" class="btn" href="#" download>CSV</a><a id="auditLink" class="btn" href="#" target="_blank">Audit log</a></div></div>
       </div>
-      <p class="muted small">Click on the image to add or remove a detection. Coordinates are scaled to the original image.</p>
-      <div id="toast" hidden></div>
 
-      <div class="tabs" role="tablist">
+      <div class="tabs" role="tablist" style="margin-top:16px">
         <button role="tab" aria-selected="true" data-tab="verify" class="tab is-active">How it was verified</button>
         <button role="tab" data-tab="measure" class="tab">Measurements</button>
         <button role="tab" data-tab="types" class="tab">Colony types</button>
         <button role="tab" data-tab="report" class="tab">Report</button>
       </div>
-
-      <div id="tab-verify" class="tab-panel is-active">
-        <ol id="traceList" class="timeline"></ol>
-      </div>
-      <div id="tab-measure" class="tab-panel" hidden>
-        <div class="table-wrap">
-          <table id="measureTable">
-            <thead><tr><th>#</th><th>Area (px²)</th><th>Diam (px)</th><th>Area (mm²)</th><th>Diam (mm)</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <a id="csvLink" class="btn btn-ghost" href="#" download>Download CSV</a>
-      </div>
-      <div id="tab-types" class="tab-panel" hidden>
-        <div id="colonyTypes"></div>
-        <p class="muted small">Descriptive only. Confirm with standard microbiological methods.</p>
-      </div>
-      <div id="tab-report" class="tab-panel" hidden>
-        <pre id="reportText" class="report"></pre>
-      </div>
+      <div id="tab-verify" class="tab-panel is-active"><ol id="traceList2" class="timeline"></ol></div>
+      <div id="tab-measure" class="tab-panel" hidden><div class="table-wrap"><table id="measureTable"><thead><tr><th>#</th><th>Area (px²)</th><th>Diam (px)</th><th>Area (mm²)</th><th>Diam (mm)</th></tr></thead><tbody></tbody></table></div></div>
+      <div id="tab-types" class="tab-panel" hidden><div id="colonyTypes"></div><p class="muted small">Descriptive only. Confirm with standard microbiological methods.</p></div>
+      <div id="tab-report" class="tab-panel" hidden><pre id="reportText" class="report"></pre></div>
     </div>
+    <div id="resultState_hidden" hidden></div>
   </section>
 </main>
 
-<footer class="ftr">
-  <span>For research and quality-control labs.</span>
-  <a href="https://github.com/anomalyco/labvision-copilot" target="_blank" rel="noopener">GitHub</a>
-</footer>
+<footer class="ftr"><span>For research and quality-control labs.</span><a href="https://github.com/anomalyco/labvision-copilot" target="_blank" rel="noopener">GitHub</a></footer>
 
+<script>
+// upload button
+document.getElementById('uploadBtn')?.addEventListener('click', ()=> document.getElementById('fileInput')?.click());
+// keep IDs compatible: map new elements to old IDs expected by app.js
+// plate thumb/name updates
+const _origSetFile = window.setFile; // will be overridden by app.js load
+document.addEventListener('DOMContentLoaded', ()=>{
+  // queue badge
+  fetch('/api/queue').then(r=>r.json()).then(data=>{
+    const need = data.filter(d=>d.needs_review && !d.reviewed_by).length;
+    const badge=document.getElementById('queueBadge');
+    if(badge){ badge.textContent=need; badge.hidden = need===0; }
+  }).catch(()=>{});
+  // approve button wiring (right header)
+  const approveBtn=document.getElementById('approveBtn');
+  if(approveBtn){
+    approveBtn.addEventListener('click', async ()=>{
+      const runId = window.lastResult?.run_id;
+      if(!runId) return;
+      const reviewer = prompt('Your name for audit log:') || 'technician';
+      const r=await fetch(`/api/runs/${encodeURIComponent(runId)}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reviewer})});
+      if(r.ok){ alert('Approved'); approveBtn.hidden=true; } else alert('Approve failed');
+    });
+  }
+  // sync request subtitle and sizes from app.js renderResult
+  const origRender = window.renderResult;
+  // patch after app.js loads
+  setTimeout(()=>{
+    if(window.renderResult){
+      const _orig=window.renderResult;
+      window.renderResult=function(data){
+        _orig(data);
+        const sub=document.getElementById('requestSubtitle');
+        if(sub) sub.textContent=data.inputs?.request || document.getElementById('requestInput')?.value || '—';
+        const sub2=document.getElementById('countSub');
+        // already set by orig, but add human edits count
+        if(data.boxes && data.measurements){
+          const human = (data.boxes.length - (data.measurements.length||0));
+          // show SAM + human
+        }
+        const medianEl=document.getElementById('sizesMedian');
+        const rangeEl=document.getElementById('sizesRange');
+        if(data.measurements && data.measurements.length){
+          const ds=data.measurements.map(m=>m.diameter_mm||m.diameter_px).filter(v=>v);
+          if(ds.length){ ds.sort((a,b)=>a-b); const med=ds[Math.floor(ds.length/2)]; if(medianEl) medianEl.textContent=`median ${med.toFixed(1)} ${data.measurements[0].diameter_mm?'mm':'px'}`; if(rangeEl) rangeEl.textContent=`range ${Math.min(...ds).toFixed(1)}–${Math.max(...ds).toFixed(1)} ${data.measurements[0].diameter_mm?'mm':'px'}`; }
+        }
+        const reportSum=document.getElementById('reportSummary');
+        if(reportSum && data.report) reportSum.textContent=data.report.split('\n').slice(0,2).join(' ');
+        const auditLink=document.getElementById('auditLink');
+        if(auditLink && data.run_id) auditLink.href=`/api/runs/${data.run_id}`;
+        // show approve if countable etc
+        const ab=document.getElementById('approveBtn');
+        if(ab && data.run_id) ab.hidden=false;
+        // mirror liveSteps to verifiedTime
+        const vt=document.getElementById('verifiedTime');
+        if(vt && data.trace) vt.textContent = data.duration_ms ? (data.duration_ms/1000).toFixed(1)+' s' : '';
+        // sync plate thumb
+        const pn=document.getElementById('plateName');
+        const pm=document.getElementById('plateMeta');
+        if(pn && data.image_w) {
+          pn.textContent = data.inputs?.image || data.run_id || 'Plate';
+          if(pm) pm.textContent = `${data.image_w} × ${data.image_h}`;
+        }
+      };
+    }
+  }, 500);
+});
+// view mode toggle maps to existing modes
+document.getElementById('modeView')?.addEventListener('click', ()=>{
+  document.querySelectorAll('.seg-control .btn').forEach(b=>b.classList.remove('is-active'));
+  document.getElementById('modeView').classList.add('is-active');
+  // set to view (no correction)
+  if(window.correctMode) window.correctMode='view';
+});
+document.getElementById('modeAdd')?.addEventListener('click', ()=>{
+  document.querySelectorAll('.seg-control .btn').forEach(b=>b.classList.remove('is-active'));
+  document.getElementById('modeAdd').classList.add('is-active');
+  document.getElementById('modeAdd').dispatchEvent(new Event('click',{bubbles:true})); // let app.js handle
+});
+</script>
 <script src="/web/app.js"></script>
 </body>
 </html>

@@ -21,7 +21,8 @@ let ctx = viewer.getContext("2d");
 function showState(which){
   emptyState.hidden = which!=="empty";
   loadingState.hidden = which!=="loading";
-  if(liveProgress) liveProgress.hidden = which!=="loading";
+  // How it was verified always visible per mock
+  if(liveProgress) liveProgress.hidden = false;
   errorState.hidden = which!=="error";
   resultState.hidden = which!=="result";
 }
@@ -608,10 +609,12 @@ viewer.addEventListener("mouseup", async (e)=>{
 });
 viewer.addEventListener("mouseleave", ()=>{ isDragging=false; clearDragRect(); hoveredIdx=null; drawViewer(); });
 
-modeAdd.addEventListener("click", ()=>{ correctMode="add"; modeAdd.classList.add("is-active"); modeRemove.classList.remove("is-active"); if(modeManual) modeManual.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
-modeRemove.addEventListener("click", ()=>{ correctMode="remove"; modeRemove.classList.add("is-active"); modeAdd.classList.remove("is-active"); if(modeManual) modeManual.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+const modeView=document.getElementById("modeView");
+if(modeView){ modeView.addEventListener("click", ()=>{ correctMode="view"; document.querySelectorAll(".seg-control .btn").forEach(b=>b.classList.remove("is-active")); modeView.classList.add("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); }); }
+modeAdd.addEventListener("click", ()=>{ correctMode="add"; document.querySelectorAll(".seg-control .btn").forEach(b=>b.classList.remove("is-active")); modeAdd.classList.add("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+modeRemove.addEventListener("click", ()=>{ correctMode="remove"; document.querySelectorAll(".seg-control .btn").forEach(b=>b.classList.remove("is-active")); modeRemove.classList.add("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
 if(modeManual){
-  modeManual.addEventListener("click", ()=>{ correctMode="manual"; modeManual.classList.add("is-active"); modeAdd.classList.remove("is-active"); modeRemove.classList.remove("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
+  modeManual.addEventListener("click", ()=>{ correctMode="manual"; document.querySelectorAll(".seg-control .btn").forEach(b=>b.classList.remove("is-active")); modeManual.classList.add("is-active"); updateCursorMode(); hoveredIdx=null; drawViewer(); });
 }
 
 document.querySelectorAll(".tab").forEach(btn=>{

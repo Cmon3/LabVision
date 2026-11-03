@@ -158,7 +158,8 @@ def _masks_png(masks: np.ndarray, w: int, h: int, human_idx: set[int] | None = N
         for i, m in enumerate(masks):
             if m.shape[0] != h or m.shape[1] != w:
                 continue
-            col = (31, 111, 106, 130) if i in human_idx else (255, 0, 0, 100)
+            # SAM teal #29B3A8 @35% fill, human amber #C8892B
+            col = (200, 137, 43, 90) if i in human_idx else (41, 179, 168, 89)
             overlay = Image.new("RGBA", (w, h), col)
             mask_im = Image.fromarray((m.astype(np.uint8) * 255))
             tmp = Image.new("RGBA", (w, h), (0, 0, 0, 0))
