@@ -117,6 +117,7 @@ MAE 17.70 | mean % err 11.8%
 - TNTC: counts >300 reported as "Too numerous to count (>300 CFU): dilute and re-plate" (no AGAR test exceeds 300; 518 is 298, close threshold).
 - Prompt wording: "round spot" MAE 3.05 dev vs "bacterial colony" 34.05 and "colonies" 31.47; kept "round spot" for AGAR (test MAE 17.7).
 - w1 vs w2: w1 (cell body) MAE 5.48 vs w2 (nuclei) 18.95; "nucleus" prompt MAE 52.6 worse than "cell" for w2, kept "cell".
+- Sanity guards (all on): outside-plate 1.10x made test MAE 18.10 vs 17.70 (14684 56->51, 510 63->54 vs true 55,69) — turned off (inner rim discards real edge colonies). Dense-plate flag does not change count (518 still 31 vs 298) but adds needs_review "possible undercount". With outside guard off, test MAE 17.70 same as baseline.
 - Tiling: whole image MAE 3.05 beats 2×2 (3.11) and 3×3 (3.84) on dev, so no tiling; plate crop optional not beneficial.
 - Retried empty SAM 0 with QC not-empty via alt prompt "colonies" (config.py) to recover undercounts.
 

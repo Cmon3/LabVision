@@ -11,15 +11,25 @@ def test_guard1_outside_plate_discarded(tmp_path, monkeypatch):
     from labvision.sanity import filter_outside_plate, apply_box_guards
     from labvision.segment import Box
 
-    # plate at (50,50) r=40 in 100x100 image
-    boxes = [Box(40,40,50,50, 0.9), Box(90,90,95,95, 0.9), Box(45,45,55,55, 0.95)]  # 2 inside, 1 outside (centre 92.5,92.5 dist ~60 >40)
-    kept, discarded = filter_outside_plate(boxes, 50, 50, 40)
+    # plate at (50,50) r=40 in 100x100 image, factor 1.10 => thresh 44, near 50
+    boxes = [Box(40,40,50,50, 0.9), Box(90,90,95,95, 0.9), Box(45,45,55,55, 0.95)]  # 2 inside, 1 outside (centre 92.5,92.5 dist ~60 >44, >50 far)
+    kept, discarded, near_rim = filter_outside_plate(boxes, 50, 50, 40)
     assert discarded == 1
     assert kept == [0, 2]
+    assert near_rim == 0  # far outside, not near rim
 
-    # integration via server: outside box should be discarded, trace logged, report mentions it
+    # near rim: box just outside 1.10 but within 1.25 should be near_rim
+    boxes2 = [Box(40,40,50,50,0.9), Box(70,50,80,60,0.9)]  # second centre 75,55 dist ~26.9? actually need near rim: 50,50 r40, 1.10=44, 1.25=50, so dist 46 is near rim
+    # create box at (88,50,98,60) centre 93,55 dist ~43.3? need 46
+    boxes2 = [Box(40,40,50,50,0.9), Box(85,45,95,55,0.9)]  # centre 90,50 dist 40 -> inside? need 46
+    # use 92,40,98,50 centre 95,45 dist sqrt(45^2+5^2)=45.27 near rim
+    boxes2 = [Box(40,40,50,50,0.9), Box(92,40,98,50,0.9)]
+    kept2, discarded2, near_rim2 = filter_outside_plate(boxes2, 50, 50, 40)
+    assert discarded2 == 1
+    assert near_rim2 == 1  # just outside 1.10 but within 1.25
+
+    # integration via server: guard is DISABLED after benchmark (MAE 18.10 vs 17.70), so no discard
     from server import _analyze_image
-    # create dummy image 100x100
     arr = np.full((100, 100, 3), 180, dtype=np.uint8)
     pil = Image.fromarray(arr)
     buf = io.BytesIO(); pil.save(buf, format="PNG"); img_bytes = buf.getvalue()
@@ -42,18 +52,19 @@ def test_guard1_outside_plate_discarded(tmp_path, monkeypatch):
                 with patch("labvision.plate.detect_plate_diameter_px", return_value=80.0):
                     out = _analyze_image(img_bytes, "count colonies", run_id="test_guard1")
 
-    assert out["count"] == 1  # one outside discarded
+    # guard disabled => no discard, count 2
+    assert out["count"] == 2
     trace = out["trace"]
     pf = [t for t in trace if t["name"] == "plate_filter"]
     assert pf and pf[0]["decided_by"] == "rule"
-    assert pf[0]["discarded"] == 1
-    assert "outside plate" in out["report"].lower()
+    # disabled guard logs 0 discarded
+    assert pf[0]["discarded"] == 0
 
-    # queue shows needs_review reason
+    # queue should NOT show outside plate when disabled (or only when flagged far outside)
     from labvision.queue import get_queue_items
     items = get_queue_items(tmp_path/"runs")
     m = {i["run_id"]: i for i in items}
-    assert "outside plate" in m["test_guard1"]["reasons"]
+    assert "outside plate" not in m["test_guard1"]["reasons"]
 
 
 def test_guard2_plate_plausibility(tmp_path, monkeypatch):

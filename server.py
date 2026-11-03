@@ -343,9 +343,23 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
             _trace("size_check", "warn", decided_by="rule", implausible_count=len(_implausible), indices=_implausible, reason="diameter outside 0.1-15 mm", action="flagged not dropped")
     except Exception:
         pass
+    # Guard: dense plate possible undercount (crowded but low count e.g. 518: 30 found)
+    _dense = False
+    try:
+        from labvision.sanity import is_possible_undercount
+        from labvision import qc as _qc2
+        _cov = _qc2.mask_coverage(masks, w*h) if 'masks' in locals() and masks is not None else 0
+        _dense = is_possible_undercount(len(rows), rows, _cov)
+        if _dense:
+            _trace("dense_check", "warn", decided_by="rule", reason="possible undercount (dense plate)", count=len(rows), coverage=round(_cov,4))
+    except Exception:
+        pass
 
     count = len(rows)
     status = _status_for({"is_blurry": is_blurry, "glare": glare}, count)
+    # dense plates never OK
+    if _dense and status == "OK":
+        status = "Review"
     count_label = _count_label(count)
     # QC escalation: needs_rephoto
     if is_blurry or glare:
@@ -389,6 +403,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
             report += "\nNote: plate not found (diameter outside 40-98% of image side) — sizes in px only."
         if _implausible:
             report += f"\nNote: {len(_implausible)} colonies flagged implausible size (diameter outside 0.1-15 mm)."
+        if _dense:
+            report += "\nNote: possible undercount (dense plate) — crowded but low count."
     except Exception:
         pass
     if experimental:
@@ -423,10 +439,13 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         try:
             _guard_params.update({
                 "outside_plate_discarded": guard_res.get("stats", {}).get("outside_plate_discarded", 0),
+                "outside_plate_near_rim": guard_res.get("stats", {}).get("outside_plate_near_rim", 0),
+                "outside_plate_flagged": guard_res.get("stats", {}).get("outside_plate_flagged", 0),
                 "duplicates_removed": guard_res.get("stats", {}).get("duplicates_removed", 0),
                 "plate_plausible": guard_res.get("plate_plausible", bool(pdiam)),
                 "plate_not_found": not guard_res.get("plate_plausible", bool(pdiam)),
                 "implausible_size_count": len(_implausible) if isinstance(_implausible, list) else 0,
+                "possible_undercount": bool(_dense),
             })
         except Exception:
             pass

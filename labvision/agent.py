@@ -491,16 +491,26 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
                             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result)})
                             continue
                     measure_rows = rows
-                    # Guard 3: colony size plausibility
+                    # Guard 3: colony size plausibility + dense plate
                     try:
-                        from labvision.sanity import flag_implausible_sizes
+                        from labvision.sanity import flag_implausible_sizes, is_possible_undercount
                         _bad = flag_implausible_sizes(measure_rows)
                         _guard_stats["implausible_size_count"] = len(_bad)
                         if _bad:
                             _emit({"type": "step", "step": "size_check", "status": "warn", "message": f"Implausible size: {len(_bad)} colonies outside 0.1-15 mm", "values": {"implausible_count": len(_bad), "indices": _bad, "reason": "diameter outside 0.1-15 mm"}, "decided_by": "rule"})
+                        # dense plate possible undercount
+                        try:
+                            from labvision import qc as _qc2
+                            _cov = _qc2.mask_coverage(masks, _img_w*_img_h) if 'masks' in locals() and masks is not None else 0
+                            _dense_flag = is_possible_undercount(len(measure_rows), measure_rows, _cov)
+                            _guard_stats["possible_undercount"] = bool(_dense_flag)
+                            if _dense_flag:
+                                _emit({"type": "step", "step": "dense_check", "status": "warn", "message": "Possible undercount (dense plate)", "values": {"count": len(measure_rows), "coverage": round(_cov,4)}, "decided_by": "rule"})
+                        except Exception:
+                            pass
                     except Exception:
                         pass
-                    result = {"count": len(rows), "rows": rows[:5], **_plate_info, "implausible_size_count": _guard_stats.get("implausible_size_count", 0)}
+                    result = {"count": len(rows), "rows": rows[:5], **_plate_info, "implausible_size_count": _guard_stats.get("implausible_size_count", 0), "possible_undercount": _guard_stats.get("possible_undercount", False)}
                     _emit({"type": "step", "step": "measure", "status": "ok", "message": f"Measuring {len(rows)} colonies… done", "values": {"count": len(rows)}, "decided_by": "rule"})
             elif fname == "ask_rephoto":
                 rephoto_reason = args.get("reason", "")
@@ -760,6 +770,8 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
             report += "\nNote: plate not found (diameter outside 40-98% of image side) — sizes in px only."
         if _guard_stats.get("implausible_size_count"):
             report += f"\nNote: {_guard_stats['implausible_size_count']} colonies flagged implausible size (diameter outside 0.1-15 mm)."
+        if _guard_stats.get("possible_undercount"):
+            report += "\nNote: possible undercount (dense plate) — crowded but low count."
     except Exception:
         pass
     if experimental:
