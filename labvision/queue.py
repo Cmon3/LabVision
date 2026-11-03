@@ -116,15 +116,54 @@ def get_queue_items(runs_dir: Path | None = None) -> list[dict]:
             except Exception:
                 pass
 
-        # status must agree with reasons: blurry/glare -> Re-photo, TNTC -> TNTC, empty -> Empty, else OK
-        if is_blurry or glare:
-            status = "Re-photo"
-        elif count > 300:
-            status = "TNTC"
-        elif count == 0:
-            status = "Empty"
-        else:
-            status = "OK"
+        # check escalation/status.json first (named rules)
+        esc = _load_json(p / "escalation.json")
+        status_file = _load_json(p / "status.json")
+        # status override from escalation
+        esc_status = None
+        esc_rule = None
+        if esc:
+            esc_rule = esc.get("rule")
+            if esc_rule == "needs_rephoto":
+                esc_status = "needs_input"
+                status = "Re-photo"
+            elif esc_rule == "report_refused":
+                esc_status = "needs_input"
+                # keep computed status for display but queue status is needs_input
+                if is_blurry or glare:
+                    status = "Re-photo"
+                elif count > 300:
+                    status = "TNTC"
+                elif count == 0:
+                    status = "Empty"
+                else:
+                    status = esc.get("status", "needs_input")
+            elif esc_rule == "awaiting_signoff":
+                esc_status = "awaiting_signoff"
+                status = "awaiting_signoff"
+            if esc_status:
+                pass
+            else:
+                esc_status = esc.get("status")
+        elif status_file:
+            sf_status = status_file.get("status")
+            if sf_status in ("paused", "needs_input", "awaiting_signoff", "done", "running"):
+                if sf_status == "paused":
+                    status = "paused"
+                    esc_status = "paused"
+                elif sf_status == "done":
+                    status = "done"
+                    esc_status = "done"
+        if not esc_status:
+            # status must agree with reasons: blurry/glare -> Re-photo, TNTC -> TNTC, empty -> Empty, else OK
+            if is_blurry or glare:
+                status = "Re-photo"
+            elif count > 300:
+                status = "TNTC"
+            elif count == 0:
+                status = "Empty"
+            else:
+                status = "OK"
 
         reasons = []
         if is_blurry:
@@ -151,6 +190,22 @@ def get_queue_items(runs_dir: Path | None = None) -> list[dict]:
 
         needs_review = len(reasons) > 0
 
+        # handoff for escalation display
+        handoff = {}
+        if esc:
+            handoff = {k: esc.get(k) for k in ("rule", "what_blocked", "why", "what_was_done", "request", "plate_id")}
+            # also include reasons from escalation
+            if esc_rule == "needs_rephoto" and "blurry" not in reasons and "glare" not in reasons:
+                if "needs_rephoto" not in reasons:
+                    reasons.append("needs_rephoto")
+            if esc_rule == "report_refused":
+                reasons.append("report_refused")
+            if esc_rule == "awaiting_signoff":
+                reasons.append("awaiting_signoff")
+                needs_review = True
+            if esc_status in ("needs_input", "awaiting_signoff", "paused"):
+                needs_review = True
+
         items.append({
             "run_id": run_id,
             "plate_id": plate_id,
@@ -168,6 +223,9 @@ def get_queue_items(runs_dir: Path | None = None) -> list[dict]:
             "low_confidence": low_conf,
             "image_url": f"/api/runs/{run_id}/image.png",
             "masks_url": f"/api/runs/{run_id}/masks.png",
+            "escalation": esc if esc else None,
+            "handoff": handoff if handoff else None,
+            "queue_status": esc_status or status,
         })
     # sort: needs_review first, then time desc
     items.sort(key=lambda x: (not x["needs_review"], x["time"]), reverse=False)

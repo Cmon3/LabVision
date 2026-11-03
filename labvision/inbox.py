@@ -94,6 +94,31 @@ def process_one(inbox_dir: Path, image_path: Path) -> dict:
                 jpath.write_text(json.dumps(rec, indent=2, sort_keys=True))
             # also stash inbox.json for queue reader
             (rdir / "inbox.json").write_text(json.dumps({"plate_id": plate_id, "inbox_file": image_path.name, **sidecar}, indent=2))
+            # update escalation plate_id if QC auto-escalated with run_id placeholder
+            try:
+                esc_p = rdir / "escalation.json"
+                if esc_p.exists():
+                    esc = json.loads(esc_p.read_text())
+                    if esc.get("plate_id") == result["run_id"]:
+                        esc["plate_id"] = plate_id
+                        esc_p.write_text(json.dumps(esc, indent=2))
+            except Exception:
+                pass
+            # auto-resume any prior needs_rephoto for same plate_id
+            try:
+                from labvision.escalation import find_needs_rephoto_for_plate
+                prior = find_needs_rephoto_for_plate(plate_id, base=_runs_dir())
+                for old_id in prior:
+                    if old_id == result["run_id"]:
+                        continue
+                    old_dir = _runs_dir() / old_id
+                    # link new image as resumption
+                    (old_dir / "resume_image.json").write_text(json.dumps({"new_run_id": result["run_id"], "at": __import__("time").time()}))
+                    # mark old as pending resume -> status still needs_input but will resume automatically if requested
+                    # also create guidance that new photo arrived
+                    (old_dir / "rephoto_arrived.json").write_text(json.dumps({"new_run_id": result["run_id"], "plate_id": plate_id}))
+            except Exception:
+                pass
         except Exception:
             pass
 

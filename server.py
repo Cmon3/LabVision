@@ -33,6 +33,19 @@ def _get_runs_dir() -> Path:
 RUNS_DIR = _get_runs_dir()
 CACHE_DIR = Path("runs/cache")
 WEB_DIR = Path("web")
+# escalation helpers (lazy import to avoid cycle)
+def _escalate_needs_rephoto(run_id: str, reason: str, plate_id: str | None, what_was_done: str):
+    try:
+        from labvision.escalation import escalate
+        escalate(run_id, "needs_rephoto", {
+            "what_blocked": "QC failed — photo needs re-take",
+            "why": reason,
+            "what_was_done": what_was_done,
+            "request": f"Re-photo plate {plate_id or run_id}: {reason}",
+            "plate_id": plate_id or run_id,
+        }, base=_get_runs_dir())
+    except Exception:
+        pass
 
 app = FastAPI(title="LabVision Copilot API")
 
@@ -242,6 +255,18 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     count = len(rows)
     status = _status_for({"is_blurry": is_blurry, "glare": glare}, count)
     count_label = _count_label(count)
+    # QC escalation: needs_rephoto
+    if is_blurry or glare:
+        reason = "blurry" if is_blurry else "glare"
+        if is_blurry and glare:
+            reason = "blurry and glare"
+        _escalate_needs_rephoto(run_id, reason, run_id, what_was_done=f"QC {reason} count {count}")
+        # also save progress as needs_input for resume
+        try:
+            from labvision.progress import save_progress
+            save_progress(run_id, [{"role": "user", "content": request}], status="needs_input")
+        except Exception:
+            pass
 
     # countable verdict
     if "countable" in lower_req:
@@ -909,6 +934,93 @@ def api_approve_clean(payload: dict | None = None):
         return {"approved": approved, "count": len(approved)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/runs/{run_id}/review", summary="Review report (approve or reject with notes) — sign-off", tags=["queue"])
+def api_review(run_id: str, payload: dict):
+    decision = (payload.get("decision") or payload.get("action") or "").lower()
+    if decision not in ("approve", "approved", "reject", "rejected"):
+        raise HTTPException(status_code=400, detail={"error": "decision must be approve or reject", "hint": "Send {decision: approve|reject, reviewer, notes}"})
+    reviewer = payload.get("reviewer") or payload.get("reviewed_by") or "technician"
+    notes = payload.get("notes") or ""
+    rdir = _get_runs_dir() / run_id
+    if not rdir.exists():
+        raise HTTPException(status_code=404, detail="run not found")
+    esc_path = rdir / "escalation.json"
+    # verify it's awaiting_signoff
+    try:
+        esc = json.loads(esc_path.read_text()) if esc_path.exists() else {}
+        if esc.get("rule") != "awaiting_signoff":
+            # allow approve even without signoff for backward compat (queue approve)
+            pass
+    except Exception:
+        pass
+    from labvision.escalation import set_status
+    if decision in ("approve", "approved"):
+        (rdir / "review.json").write_text(json.dumps({"decision": "approved", "reviewer": reviewer, "notes": notes, "at": time.time()}))
+        set_status(run_id, "done", base=_get_runs_dir(), rule="awaiting_signoff")
+        # also write approval.json for queue
+        from labvision.queue import approve_run
+        try:
+            approve_run(run_id, str(reviewer).strip(), _get_runs_dir())
+        except Exception:
+            pass
+        return {"run_id": run_id, "status": "done", "decision": "approved"}
+    else:
+        (rdir / "review.json").write_text(json.dumps({"decision": "rejected", "reviewer": reviewer, "notes": notes, "at": time.time()}))
+        # clear awaiting_signoff so agent can resume
+        try:
+            (rdir / "escalation.json").unlink()
+        except Exception:
+            pass
+        set_status(run_id, "running", base=_get_runs_dir())
+        return {"run_id": run_id, "status": "running", "decision": "rejected", "notes": notes}
+
+
+@app.post("/api/runs/{run_id}/guidance", summary="Provide guidance for report_refused escalation", tags=["queue"])
+def api_guidance(run_id: str, payload: dict):
+    reviewer = payload.get("reviewer") or payload.get("reviewed_by") or "technician"
+    notes = payload.get("notes") or payload.get("guidance") or ""
+    if not notes.strip():
+        raise HTTPException(status_code=400, detail={"error": "missing notes", "hint": "Send {notes: guidance text}"})
+    rdir = _get_runs_dir() / run_id
+    if not rdir.exists():
+        raise HTTPException(status_code=404, detail="run not found")
+    (rdir / "guidance.json").write_text(json.dumps({"reviewer": reviewer, "notes": notes, "at": time.time()}))
+    from labvision.escalation import set_status
+    set_status(run_id, "running", base=_get_runs_dir())
+    return {"run_id": run_id, "status": "running", "guidance": notes}
+
+
+@app.post("/api/runs/{run_id}/resume", summary="Resume a paused/needs_input/awaiting_signoff run", tags=["queue"])
+def api_resume(run_id: str):
+    from labvision.progress import load_progress, resume_payload
+    from labvision.agent import resume_run
+    try:
+        prog = load_progress(run_id, base=_get_runs_dir())
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="run not found")
+    step = resume_payload(run_id, base=_get_runs_dir())
+    if not step.get("message"):
+        # if paused, just tell client why not
+        return {"run_id": run_id, "status": step.get("status", prog.get("status")), "note": step.get("note", "")}
+    # for paused or rejected signoff or report_refused guidance, trigger resume
+    # For needs_rephoto, check if new image arrived via resume_image.json
+    try:
+        out = resume_run(run_id)
+        return out
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/runs/{run_id}/progress", summary="Get run progress (messages + status)", tags=["queue"])
+def api_progress(run_id: str):
+    from labvision.progress import load_progress
+    try:
+        prog = load_progress(run_id, base=_get_runs_dir())
+        return prog
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="not found")
 
 
 @app.get("/api/export.csv", summary="Export queue for LIMS (CSV)", tags=["integration"])

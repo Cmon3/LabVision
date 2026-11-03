@@ -90,6 +90,8 @@ Summary (Nov 3 Session 7, guide + landing):
 - Cost: 0 new SAM (cached), ~35 Muse calls earlier; total well under caps.
 - Next: Simon manual QA (6-point), then submit by Nov 4 17:00 Barcelona.
 
+| 2026-11-03 | S9 Step 1: submit_report + verification/verify_report.py + progress + escalations | labvision/system_instructions.md (from agent SYSTEM), verification/verify_report.py (count match, no LLM numbers, QC→rephoto, countable TNTC/too few, benchmarked prompt→experimental, no organism/diagnosis), labvision/escalation.py + progress.py, agent submit_report inside-tool verification + MAX_TURNS 8 + save_progress per turn + paused on API error, server + queue escalation wiring; 82 tests. |
+
 ---
 Summary (Nov 3 Session 8, inbox → queue → LIMS):
 - Done: inbox poll 2 s + 2 s stability temp+rename QR/sidecar, queue review-by-exception (Re-photo/TNTC/Empty/OK, alert example, c<0.5), approve human audit, export.csv, simulator (518+blur), landing/README Where-it-fits + queue, OpenAPI, confidence.
