@@ -6,6 +6,7 @@
 @media(prefers-color-scheme:dark){
   :root{ --bg:#111615; --surface:#1A1F1E; --ink:#E6EDEB; --muted:#9AA8A6; --line:#2A3331; --shadow:0 1px 8px rgba(0,0,0,.35); }
 }
+[hidden]{display:none !important}
 *{box-sizing:border-box}
 html,body{margin:0; min-height:100%}
 body{font-family:"Source Sans 3",system-ui,sans-serif; background:var(--bg); color:var(--ink); line-height:1.5}
