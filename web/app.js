@@ -48,6 +48,24 @@ function setFile(blob, name){
   previewThumb.hidden = false;
   dropzone.querySelector(".dz-text").textContent = name || "Image selected";
   stopCamera();
+  // update left Plate card (fix 6)
+  const pn=document.getElementById("plateName"), pm=document.getElementById("plateMeta");
+  if(pn) pn.textContent = name || "Plate";
+  if(pm){
+    // try to get image size if available, else show filename
+    pm.textContent = name ? name : "Plate";
+    // if blob is image, try to get dimensions async
+    try{
+      const img=new Image();
+      img.onload=()=>{ pm.textContent = `${img.naturalWidth} × ${img.naturalHeight} · ${name||""}`; };
+      img.src=url;
+    }catch(_){}
+  }
+  // also update thumb
+  const thumb=document.getElementById("plateThumb");
+  if(thumb && url){
+    thumb.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+  }
 }
 
 dropzone.addEventListener("click", ()=> fileInput.click());
