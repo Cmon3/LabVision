@@ -36,7 +36,11 @@ if WEB_DIR.exists():
     app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 
     @app.get("/")
-    def _index():
+    def _landing():
+        return FileResponse(str(WEB_DIR / "landing.html"), media_type="text/html")
+
+    @app.get("/app")
+    def _app():
         return FileResponse(str(WEB_DIR / "index.html"), media_type="text/html")
 
     @app.api_route("/api/examples/file", methods=["GET", "HEAD"])

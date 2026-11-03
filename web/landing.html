@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LabVision Copilot — AI counts. Technicians decide.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/app.css">
+<style>
+.landing{max-width:1100px; margin:0 auto; padding:0 20px}
+.hero{padding:48px 0 32px; display:grid; gap:20px}
+.hero h1{font-family:"Bricolage Grotesque",sans-serif; font-size:2.6rem; line-height:1.05; letter-spacing:-.02em; margin:0}
+.hero p.lead{font-size:1.15rem; color:var(--muted); margin:0; max-width:640px}
+.hero-actions{display:flex; gap:12px; flex-wrap:wrap; margin-top:8px}
+.btn-landing{font:600 1rem "Source Sans 3",sans-serif; padding:12px 18px; border-radius:10px; border:1px solid var(--ink); background:var(--ink); color:var(--bg); text-decoration:none; display:inline-flex; align-items:center}
+.btn-landing.secondary{background:var(--surface); color:var(--ink); border-color:var(--line)}
+.section{padding:32px 0; border-top:1px solid var(--line)}
+.section h2{font-family:"Bricolage Grotesque",sans-serif; font-size:1.45rem; margin:0 0 12px}
+.section p{margin:0 0 10px; color:var(--ink); line-height:1.55}
+.muted{color:var(--muted)}
+.steps{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:12px}
+@media(max-width:760px){ .steps{grid-template-columns:1fr} .hero h1{font-size:2rem} }
+.step-card{border:1px solid var(--line); border-radius:var(--radius); padding:16px; background:var(--surface)}
+.step-card .icon{font-size:1.5rem; margin-bottom:8px}
+.step-card h3{font-size:1rem; margin:0 0 6px}
+.results-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:12px}
+@media(max-width:760px){ .results-grid{grid-template-columns:1fr} }
+.bar-wrap{border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--surface)}
+.bar{height:14px; border-radius:999px; background:var(--line); overflow:hidden; margin-top:6px}
+.bar-fill{height:100%; background:var(--accent)}
+.bar-fill.bad{background:var(--fail)}
+.badges{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+.landing .chip{font-family:"JetBrains Mono",monospace}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="hdr-inner">
+    <div class="hdr-title">
+      <h1>LabVision Copilot</h1>
+      <p class="hdr-sub">Plate · colony quantification · research / QC</p>
+    </div>
+    <div class="chips" aria-label="models">
+      <span class="chip">SAM 3.1</span>
+      <span class="chip">Muse Spark Open</span>
+      <span class="chip">Muse Voice Transcribe</span>
+      <a href="/app" class="btn btn-sm" style="text-decoration:none">Open the app →</a>
+    </div>
+  </div>
+</header>
+
+<main class="landing">
+  <section class="hero">
+    <h1>AI counts.<br>Technicians decide.</h1>
+    <p class="lead">Photo of an agar plate + a plain request → a colony count you can audit.</p>
+    <div class="hero-actions">
+      <a href="/app?example=14684" class="btn-landing">Try an example plate</a>
+      <a href="https://github.com/anomalyco/labvision-copilot" class="btn-landing secondary" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+    <p class="muted small">Demo plate 14684: 55 true, 56 predicted. Every number comes from Python, not the model.</p>
+  </section>
+
+  <section class="section">
+    <h2>The problem</h2>
+    <p>QC, food and water labs count colonies by eye. In pharma, that count decides whether a batch is released. It is slow, subjective, and hard to audit.</p>
+  </section>
+
+  <section class="section">
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step-card">
+        <div class="icon">⌨️</div>
+        <h3>1. Ask</h3>
+        <p class="muted">Type or speak a plain request — “count colonies larger than 2 mm”, “is this plate countable?” SAM 3.1 prompt is chosen by Muse Spark Open.</p>
+      </div>
+      <div class="step-card">
+        <div class="icon">🔬</div>
+        <h3>2. Agent plans, SAM finds, Python measures</h3>
+        <p class="muted">The agent checks quality (blur, glare), SAM 3.1 finds colonies, Python measures areas and diameters in px or mm. Each step streams live with its badge: model, rule, or human.</p>
+      </div>
+      <div class="step-card">
+        <div class="icon">✅</div>
+        <h3>3. Review, click to fix, export</h3>
+        <p class="muted">Masks and boxes on a canvas, measurements table, QC trace, and report. Click to add or remove a colony, download CSV — every edit is logged separately.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Results</h2>
+    <p><strong>11.8% average error</strong> on 20 plates it never saw, <strong>7 exact</strong>. Same data, different prompt:</p>
+    <div class="results-grid">
+      <div class="bar-wrap">
+        <div class="muted small">“bacterial colony” — 99% error</div>
+        <div class="bar"><div class="bar-fill bad" style="width:99%"></div></div>
+      </div>
+      <div class="bar-wrap">
+        <div class="muted small">“round spot” — 11.8% error (benchmarked)</div>
+        <div class="bar"><div class="bar-fill" style="width:11.8%"></div></div>
+      </div>
+    </div>
+    <p class="muted small" style="margin-top:10px">Full tables in <a href="https://github.com/anomalyco/labvision-copilot/blob/main/bench/RESULTS.md" target="_blank" rel="noopener">bench/RESULTS.md</a> — AGAR 20 test plates, BBBC005 w1 MAE 5.48 / w2 18.95.</p>
+  </section>
+
+  <section class="section">
+    <h2>Built with Meta</h2>
+    <div class="badges">
+      <span class="chip">SAM 3.1 — Meta Model API, one-bit masks</span>
+      <span class="chip">Muse Spark Open — open weights via Baseten</span>
+      <span class="chip">Muse Voice Transcribe — WAV mono 24 kHz, hands-free</span>
+    </div>
+    <p class="muted small" style="margin-top:8px">Open-weights bonus track. Only public or synthetic data goes to the model APIs.</p>
+  </section>
+
+  <section class="section">
+    <h2>What it won’t do</h2>
+    <ul>
+      <li><strong>No organism names.</strong> Muse Spark Open declined on biological-risk policy — we kept that line.</li>
+      <li><strong>No mixed-culture flag.</strong> It scored 80% vs 90% always-pure baseline on test, so we removed it.</li>
+      <li><strong>&gt;300 colonies = TNTC.</strong> “Too numerous to count: dilute and re-plate” — the honest answer for dense plates.</li>
+    </ul>
+    <p class="muted small">Research and QC quantification — not a clinical device. Numbers from Python, interpretation from the model.</p>
+  </section>
+</main>
+
+<footer class="ftr">
+  <span>Built during the Meta Global AI Developer Hackathon, Oct–Nov 2026.</span>
+  <a href="https://github.com/anomalyco/labvision-copilot" target="_blank" rel="noopener">GitHub</a>
+</footer>
+</body>
+</html>
