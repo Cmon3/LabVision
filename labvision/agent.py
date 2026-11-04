@@ -8,12 +8,16 @@ import os
 from pathlib import Path
 from typing import Any
 
+import logging
+
 import requests
 import numpy as np
 
 from labvision import measure as measure_mod
 from labvision import qc as qc_mod
 from labvision.segment import segment
+
+logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path("runs/cache")
 BASETEN_MODEL = os.environ.get("BASETEN_MODEL", "meta-models/muse-spark-open-1026")
@@ -112,6 +116,24 @@ Rules:
 - Do NOT invent numbers. The final report numbers will be filled by code from tool outputs.
 - Provide a short 2-sentence interpretation for the report (no numbers needed, they are inserted).
 """
+
+def _guard_message(g: dict) -> str:
+    """Plain-language line for a sanity-guard trace entry (see labvision/sanity.py)."""
+    n = g.get("name")
+    if n == "dedup":
+        r = g.get("removed", 0)
+        return "Duplicate check: none found" if not r else f"Duplicate check: {r} overlapping detections merged (IoU > 0.7)"
+    if n == "plate_check":
+        if g.get("status") == "ok":
+            return f"Plate size check: plate is {g.get('fraction', 0):.0%} of the image side — plausible"
+        return f"Plate size check: {g.get('reason', 'implausible')} — {g.get('action', 'sizes in px only')}"
+    if n == "plate_filter":
+        if g.get("disabled"):
+            return "Outside-plate filter: off (on the benchmark it removed real edge colonies)"
+        d = g.get("discarded", 0)
+        return "Outside-plate filter: nothing outside the plate" if not d else f"Outside-plate filter: {d} detections outside the plate discarded"
+    return f"{n}: {g.get('reason', '')}".strip()
+
 
 REPORT_TEMPLATE = """LabVision Report
 Request: {request}
@@ -267,11 +289,12 @@ def _run_id_for(image_path: Path, request: str) -> str:
     return new_run_id()
 
 
-def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_event: Any = None, run_id: str | None = None, plate_id: str | None = None) -> dict[str, Any]:
+def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_event: Any = None, run_id: str | None = None, plate_id: str | None = None, should_stop: Any = None) -> dict[str, Any]:
     """Run agent loop. Returns dict with report, count, rows, qc, etc. Numbers from measure only.
 
     If on_event is provided, it is called with step dicts for live progress:
       {type:"step", step, status, message, values, decided_by}
+    should_stop: optional callable; when it returns True the loop stops before the next model call (status "cancelled").
     decided_by: "model" for Muse tool choices/prompt, "rule" for thresholds/retry/TNTC, "human" for clicks (handled in server).
     Loop hygiene: one tool per turn, plain text not accepted, turn limit 8, paused on API error, progress saved per turn.
     Verification runs inside submit_report/ask_rephoto (outside agent control).
@@ -328,14 +351,20 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
         {"role": "system", "content": _instructions()},
         {"role": "user", "content": f"Image: {image_path.name}\nRequest: {request}\nUse tools to answer."},
     ]
+    applied_min_mm: float | None = None  # filter actually applied by measure (not just asked for)
     for turn in range(MAX_TURNS):
+        if should_stop is not None and should_stop():
+            _emit({"type": "step", "step": "cancelled", "status": "warn", "message": "Analysis cancelled by the user", "values": {}, "decided_by": "human"})
+            _save("cancelled")
+            return {"run_id": run_id, "status": "cancelled", "count": len(measure_rows) if measure_rows else (len(seg_result.boxes) if seg_result else 0)}
         # last turn hint
         if turn == MAX_TURNS - 1:
             messages.append({"role": "user", "content": "This is your last turn. Call submit_report now with what you have."})
         try:
             resp = _call_muse(messages, use_cache=use_cache)
         except Exception as e:
-            _emit({"type": "step", "step": "error", "status": "fail", "message": f"Model API error: {e}", "values": {}, "decided_by": "rule"})
+            logger.warning("planner model call failed: %s", e)
+            _emit({"type": "step", "step": "error", "status": "fail", "message": "Planner model unavailable (network or provider error) — run paused, try again", "values": {}, "decided_by": "rule"})
             _save("paused", error=str(e))
             return {"run_id": run_id, "status": "paused", "error": str(e), "count": len(measure_rows) if measure_rows else (len(seg_result.boxes) if seg_result else 0)}
         choice = resp["choices"][0]["message"]
@@ -351,18 +380,18 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
         if len(tool_calls) > 1:
             _emit({
                 "type": "step",
-                "step": "plan",
+                "step": f"plan_{turn + 1}",
                 "status": "ok",
-                "message": f"Planning: Muse Spark Open chose {tool_calls[0]['function']['name']} (1 of {len(tool_calls)} kept, one tool per turn)",
+                "message": f"Turn {turn + 1}: Muse Spark Open chose {tool_calls[0]['function']['name']} (1 of {len(tool_calls)} kept, one tool per turn)",
                 "values": {"tool_calls": [{"name": tool_calls[0]["function"]["name"], "arguments": json.loads(tool_calls[0]["function"]["arguments"] or "{}")}], "dropped": len(tool_calls) - 1},
                 "decided_by": "model",
             })
         else:
             _emit({
                 "type": "step",
-                "step": "plan",
+                "step": f"plan_{turn + 1}",
                 "status": "ok",
-                "message": f"Planning: Muse Spark Open chose {' → '.join(tc['function']['name'] for tc in tool_calls)}",
+                "message": f"Turn {turn + 1}: Muse Spark Open chose {' → '.join(tc['function']['name'] for tc in tool_calls)}",
                 "values": {"tool_calls": [{"name": tc["function"]["name"], "arguments": json.loads(tc["function"]["arguments"] or "{}")} for tc in tool_calls]},
                 "decided_by": "model",
             })
@@ -462,7 +491,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
                         _guard_stats["plate_not_found"] = not _guard_res["plate_plausible"]
                         _guard_plate_info = _plate_info_raw
                         for _ge in _guard_res["trace"]:
-                            _emit({"type": "step", "step": _ge["name"], "status": _ge["status"], "message": f"{_ge['name']}: {_ge.get('discarded', _ge.get('removed', ''))} { _ge.get('reason','')}", "values": {k: v for k, v in _ge.items() if k not in ("name", "status")}, "decided_by": "rule"})
+                            _emit({"type": "step", "step": _ge["name"], "status": _ge["status"], "message": _guard_message(_ge), "values": {k: v for k, v in _ge.items() if k not in ("name", "status")}, "decided_by": "rule"})
                     except Exception as _e:
                         try:
                             from labvision.plate import detect_plate_diameter_px as _plate_px
@@ -485,6 +514,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
                     if "min_diameter_mm" in args:
                         if rows and "diameter_mm" in rows[0]:
                             rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
+                            applied_min_mm = float(args["min_diameter_mm"])
                         else:
                             result = {"error": "no plate detected — sizes in px, cannot filter by mm", "plate_detected": False}
                             measure_rows = rows
@@ -686,7 +716,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
             _emit({"type": "step", "step": "countable", "status": "ok", "message": f"Countable check: countable (30-300) — {count} colonies", "values": {"count": count, "verdict": "countable (30-300)"}, "decided_by": "rule"})
     # TNTC: >300
     count_display = "Too numerous to count (>300 CFU): dilute and re-plate" if count > 300 else f"{count} objects"
-    _emit({"type": "step", "step": "report", "status": "running", "message": "Writing report…", "values": {}, "decided_by": "model"})
+    _emit({"type": "step", "step": "report", "status": "running", "message": "Writing report from measured values…", "values": {}, "decided_by": "rule"})
     has_mm = bool(measure_rows and "diameter_mm" in measure_rows[0])
     if measure_rows:
         ds = [r["diameter_px"] for r in measure_rows]
@@ -706,7 +736,12 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
     import re
 
     m = re.search(r"larger than\s+([\d.]+)\s*mm", request, re.I)
-    filter_line = f"Filter: diameter >= {m.group(1)} mm" if m else ""
+    if applied_min_mm is not None:
+        filter_line = f"Filter applied: diameter >= {applied_min_mm:g} mm"
+    elif m:
+        filter_line = f"Filter requested (>= {m.group(1)} mm) but not applied — count is all colonies"
+    else:
+        filter_line = ""
     mm_part = f" ({mean_mm:.2f} mm)" if has_mm else ""
     plate_note = "Plate detected — sizes in mm (90 mm plate)" if has_mm else "No plate detected — sizes in px"
     # if request asked for mm filter but no plate, note it
@@ -783,7 +818,7 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
             report += "\nCountable: TNTC (>300)"
         else:
             report += "\nCountable: countable (30-300)"
-    _emit({"type": "step", "step": "report", "status": "ok", "message": "Report ready", "values": {}, "decided_by": "model"})
+    _emit({"type": "step", "step": "report", "status": "ok", "message": "Report ready — numbers filled in by Python; the note line is Muse's summary", "values": {}, "decided_by": "rule"})
 
     # verification payload for app
     mm_per_px = (90.0 / plate_diameter_px) if plate_diameter_px else None

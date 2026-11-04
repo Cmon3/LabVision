@@ -253,10 +253,19 @@ function upsertLiveStep(evt){
   e.badge.hidden=!evt.decided_by;
 }
 
-async function doAnalyzeStream(fd){
-  const r=await fetch("/api/analyze_stream", {method:"POST", body:fd});
-  if(!r.ok || !r.body || !r.headers.get("content-type")?.includes("text/event-stream")){
-    throw new Error("stream not available");
+class StreamUnavailable extends Error {}
+class AnalysisCancelled extends Error {}
+let currentAbort=null;
+
+async function doAnalyzeStream(fd, signal){
+  const r=await fetch("/api/analyze_stream", {method:"POST", body:fd, signal});
+  if(r.status===404 || !r.body || !r.headers.get("content-type")?.includes("text/event-stream")){
+    // only this case falls back to the non-streaming endpoint
+    if(r.ok || r.status===404) throw new StreamUnavailable("stream not available");
+  }
+  if(!r.ok){
+    let j={}; try{ j=await r.json(); }catch(_){}
+    const d=j.detail||j; throw new Error(d.error||("HTTP "+r.status));
   }
   const reader=r.body.getReader();
   const decoder=new TextDecoder();
@@ -277,8 +286,10 @@ async function doAnalyzeStream(fd){
           upsertLiveStep(obj);
         } else if(obj.type==="result"){
           finalData=obj.data;
+        } else if(obj.type==="cancelled"){
+          throw new AnalysisCancelled();
         } else if(obj.type==="error"){
-          throw new Error(obj.error||"stream error");
+          const err=new Error(obj.error||"stream error"); err.hint=obj.hint; throw err;
         }
       }
     }
@@ -293,16 +304,19 @@ async function doAnalyze(){
   showState("loading"); loadingText.textContent="Analysing…";
   clearLive();
   runBtn.disabled=true; setLeftStatus("");
+  currentAbort=new AbortController();
   const fd=new FormData();
   fd.append("image", selectedFile, selectedFile._name||"image.jpg");
   fd.append("request", req);
   try{
     let data;
     try{
-      data=await doAnalyzeStream(fd);
-    } catch(_){
-      // fallback to non-stream
-      const r=await fetch("/api/analyze", {method:"POST", body:fd});
+      data=await doAnalyzeStream(fd, currentAbort.signal);
+    } catch(err){
+      // fall back to the non-streaming endpoint ONLY if streaming is not available;
+      // a mid-run error or a Stop must not silently start a second analysis
+      if(!(err instanceof StreamUnavailable)) throw err;
+      const r=await fetch("/api/analyze", {method:"POST", body:fd, signal:currentAbort.signal});
       if(!r.ok){
         let j={}; try{ j=await r.json(); }catch(_){ j={error:await r.text()}; }
         const detail=j.detail||j;
@@ -317,13 +331,20 @@ async function doAnalyze(){
     document.getElementById("resultState").hidden=false;
     setLeftStatus("");
   }catch(e){
+    if(e instanceof AnalysisCancelled || e.name==="AbortError"){
+      setError("Analysis stopped", "Nothing was saved as a result. Press Run analysis to start again.");
+      upsertLiveStep({step:"cancelled", status:"warn", message:"Stopped by you", decided_by:"human"});
+      return;
+    }
     const msg=e.message||String(e);
-    let hint="Check API keys in .env and try again.";
+    let hint=e.hint||"Check your connection and try again.";
     if(msg.toLowerCase().includes("meta_api_key")) hint="Missing META_API_KEY in .env";
     setError(msg.slice(0,400), hint);
-  }finally{ runBtn.disabled=false; }
+  }finally{ runBtn.disabled=false; currentAbort=null; }
 }
 runBtn.addEventListener("click", doAnalyze);
+const stopBtn=document.getElementById("stopBtn");
+if(stopBtn) stopBtn.addEventListener("click", ()=>{ if(currentAbort){ loadingText.textContent="Stopping…"; currentAbort.abort(); } });
 
 function renderResult(data){
   const isT=isTNTC(data.status, data.count);
@@ -334,6 +355,12 @@ function renderResult(data){
   statusPill.className="pill "+pillClass(data.status);
   loadViewerImages(data);
   renderTrace(data.trace||[]);
+  const tab2=document.getElementById("traceList2");
+  if(tab2){
+    tab2.innerHTML="";
+    if(liveSteps && liveSteps.children.length){ tab2.className="verified-grid"; tab2.style.listStyle="none"; tab2.style.padding="0"; for(const li of liveSteps.children) tab2.appendChild(li.cloneNode(true)); }
+    else { tab2.className="timeline"; for(const li of traceList.children) tab2.appendChild(li.cloneNode(true)); }
+  }
   renderMeasurements(data.measurements||[], data.csv_url);
   renderColonyTypes(data.colony_types||[]);
   reportText.textContent = data.report || "";

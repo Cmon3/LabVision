@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/web/app.css">
+<script src="/web/theme.js"></script>
 <style>
 /* App layout — Session 10 mock */
 .app-main{max-width:1360px;margin:0 auto;padding:24px 28px;display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
@@ -35,6 +36,8 @@
 .chip-row .sug-chip{font:400 14px "Source Sans 3",sans-serif;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 .chip-row .sug-chip.experimental{border:1px dashed var(--accent);background:var(--surface);color:var(--accent-soft-text)}
 .run-btn{font:600 17px "Source Sans 3",sans-serif;padding:14px;border-radius:10px;border:none;background:var(--ink);color:var(--bg)}
+.stop-btn{margin-left:auto;font:600 14px "Source Sans 3",sans-serif;padding:8px 14px;border-radius:8px;border:1.5px solid var(--fail);background:transparent;color:var(--fail);cursor:pointer}
+.stop-btn:hover{background:color-mix(in srgb, var(--fail) 12%, transparent)}
 .verified-grid{display:flex;flex-direction:column;gap:10px;list-style:none;padding:0;margin:0}
 .verified-grid li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:4px 10px;align-items:start;font-size:14px}
 .verified-grid .icon{font-weight:700}
@@ -121,7 +124,7 @@
       <div id="liveProgress"><ol id="liveSteps" class="verified-grid" style="list-style:none;padding:0;margin:0"></ol></div>
       <ol id="traceList" class="timeline" hidden></ol>
       <div id="emptyState" class="empty" style="padding:8px 0;text-align:left"><p class="muted small" style="margin:0">Run an analysis to see verification steps.</p></div>
-      <div id="loadingState" class="loading" hidden><div class="spinner"></div><p id="loadingText">Analysing…</p></div>
+      <div id="loadingState" class="loading" hidden><div class="spinner"></div><p id="loadingText">Analysing…</p><button id="stopBtn" class="stop-btn" type="button">Stop analysis</button></div>
       <div id="errorState" class="error-box" hidden role="alert"><p id="errorMsg"></p><p id="errorHint" class="muted"></p></div>
     </div>
   </aside>

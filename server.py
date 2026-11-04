@@ -514,6 +514,8 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
         q: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
         result_holder: dict[str, Any] = {}
+        import threading as _threading
+        cancel_evt = _threading.Event()  # set when the browser aborts (Stop button / tab closed)
 
         def on_event(evt: dict[str, Any]):
             # called from agent thread — forward thread-safely
@@ -527,8 +529,18 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
                 from labvision.agent import run_agent as _run_agent
 
                 # run_agent will emit events via on_event
-                out = _run_agent(img_path, request, on_event=on_event)
+                out = _run_agent(img_path, request, on_event=on_event, should_stop=cancel_evt.is_set)
                 result_holder["out"] = out
+                if out.get("status") == "cancelled":
+                    loop.call_soon_threadsafe(q.put_nowait, {"type": "cancelled"})
+                    return
+                if out.get("status") == "paused":
+                    if out.get("error"):
+                        evt = {"type": "error", "error": "Planner model unavailable — analysis paused", "hint": "Network or provider error. Try again in a moment."}
+                    else:
+                        evt = {"type": "error", "error": "The agent did not file a report within 8 turns — paused", "hint": "No count is shown because the report was never verified. Run again or count manually."}
+                    loop.call_soon_threadsafe(q.put_nowait, evt)
+                    return
                 # build API-shaped result from agent output + file artifacts
                 # Agent already handled QC/segment/measure and wrote report with Muse
                 # We need to supplement with file URLs and measurements
@@ -659,14 +671,17 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
 
         _asyncio.create_task(_asyncio.to_thread(run_in_thread))
 
-        while True:
-            evt = await q.get()
-            if evt is None:
-                break
-            if evt.get("type") == "error":
+        try:
+            while True:
+                evt = await q.get()
+                if evt is None:
+                    break
                 yield _sse(evt).encode()
-                break
-            yield _sse(evt).encode()
+                if evt.get("type") in ("error", "cancelled"):
+                    break
+        finally:
+            # client disconnected or stream ended: stop the agent before its next model call
+            cancel_evt.set()
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -684,6 +699,56 @@ async def api_analyze(image: UploadFile = File(...), request: str = Form("")):
     except Exception as e:
         logger.exception("api_analyze failed")
         return JSONResponse(status_code=500, content={"error": "internal error", "hint": "Check API keys in .env and try again."})
+
+
+BATCH_MAX_FILES = 50
+_BATCH_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+@app.post("/api/batch", summary="Batch upload: analyse many plates into the review queue", tags=["queue"])
+async def api_batch(images: list[UploadFile] = File(...)):
+    """Upload up to 50 plate photos at once. Each one runs through the same fixed pipeline as the
+    camera inbox (`count colonies`, `decided_by: rule`, no LLM) in the background and appears in
+    `/app/queue` as it finishes. Plate ID = QR code if found, else the file name.
+    Returns `{batch_id, accepted: [names], rejected: [{name, reason}]}` immediately."""
+    import tempfile
+    import threading
+
+    if len(images) > BATCH_MAX_FILES:
+        raise HTTPException(status_code=413, detail={"error": "too many files", "hint": f"Max {BATCH_MAX_FILES} plates per batch"})
+    staging = Path(tempfile.mkdtemp(prefix="labvision_batch_"))
+    accepted: list[str] = []
+    rejected: list[dict] = []
+    seen: set[str] = set()
+    for up in images:
+        raw_name = Path(up.filename or "plate.jpg").name
+        name = _BATCH_NAME_RE.sub("_", raw_name).lstrip(".") or "plate.jpg"
+        stem, suffix = Path(name).stem, Path(name).suffix or ".jpg"
+        n = 1
+        while name in seen:
+            n += 1
+            name = f"{stem}_{n}{suffix}"
+        data = await up.read()
+        try:
+            _validate_image_bytes(data, max_bytes=15_000_000)
+        except HTTPException as e:
+            rejected.append({"name": raw_name, "reason": (e.detail or {}).get("hint", "invalid image") if isinstance(e.detail, dict) else "invalid image"})
+            continue
+        (staging / name).write_bytes(data)
+        seen.add(name)
+        accepted.append(name)
+
+    def _work():
+        from labvision.inbox import process_one
+        for name in accepted:
+            try:
+                process_one(staging, staging / name)
+            except Exception:
+                logger.exception("batch item failed: %s", name)
+
+    if accepted:
+        threading.Thread(target=_work, name=f"batch-{staging.name}", daemon=True).start()
+    return {"batch_id": staging.name, "accepted": accepted, "rejected": rejected}
 
 
 @app.post("/api/correct", summary="Correct detection (add/remove/manual)", tags=["analysis"])
@@ -1209,7 +1274,7 @@ def api_progress(run_id: str):
 
 @app.get("/api/export.csv", summary="Export queue for LIMS (CSV)", tags=["integration"])
 def api_export_csv(from_: str | None = Query(None, alias="from"), to: str | None = Query(None, alias="to")):
-    """One row per run: plate_id, location, time, count, status, reviewed_by, reviewed_at, run_id. Filter by ?from=&to= ISO dates. Example: /api/export.csv?from=2026-11-01T00:00:00Z`."""
+    """One row per run: plate_id, location, time, count, status, reasons (why it needs review, `; `-separated), reviewed_by, reviewed_at, run_id. Filter by ?from=&to= ISO dates. Example: /api/export.csv?from=2026-11-01T00:00:00Z`."""
     try:
         from labvision.queue import get_queue_items
         from datetime import datetime
@@ -1241,10 +1306,14 @@ def api_export_csv(from_: str | None = Query(None, alias="from"), to: str | None
         # build CSV
         import io
         out = io.StringIO()
-        w = csv.DictWriter(out, fieldnames=["plate_id","location","time","count","status","reviewed_by","reviewed_at","run_id"])
+        cols = ["plate_id","location","time","count","status","reasons","reviewed_by","reviewed_at","run_id"]
+        w = csv.DictWriter(out, fieldnames=cols)
         w.writeheader()
         for it in items:
-            w.writerow({k: it.get(k, "") for k in ["plate_id","location","time","count","status","reviewed_by","reviewed_at","run_id"]})
+            row = {k: it.get(k, "") for k in cols}
+            rs = it.get("reasons") or []
+            row["reasons"] = "; ".join(str(x) for x in rs) if isinstance(rs, (list, tuple)) else str(rs)
+            w.writerow(row)
         csv_bytes = out.getvalue().encode()
         from fastapi.responses import Response
         return Response(content=csv_bytes, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=export.csv"})

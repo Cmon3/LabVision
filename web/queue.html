@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/web/app.css">
+<script src="/web/theme.js"></script>
 <style>
 .topbar{background:var(--surface);border-bottom:1px solid var(--line)}
 .topbar-inner{max-width:1360px;margin:0 auto;padding:14px 28px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
@@ -18,17 +19,16 @@
 .queue-main{max-width:1360px;margin:0 auto;padding:28px;display:flex;flex-direction:column;gap:20px}
 .summary-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
 .summary-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
-.summary-card.need{border-color:#E8C98C}
+.summary-card.need{border-color:var(--flag-line)}
 .summary-card .big{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:34px}
 .pill{font:600 13px "JetBrains Mono",monospace;padding:4px 10px;border-radius:999px}
 .pill.rephoto,.pill.tntc,.pill.review{background:var(--warn-soft);color:var(--warn-text)}
 .pill.ok{background:var(--ok-soft);color:var(--ok-text)}
 .pill.empty,.pill.approved{background:var(--line);color:var(--muted)}
-.reason-plain{font-size:13px;border:1px solid #E8C98C;color:var(--warn-text);padding:2px 8px;border-radius:6px}
+.reason-plain{font-size:13px;border:1px solid var(--flag-line);color:var(--warn-text);padding:2px 8px;border-radius:6px}
 .queue-table th{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-2);font-weight:600}
 .queue-table td{padding:14px 16px}
-.queue-table tr.flagged{background:#FFFBF3}
-@media(prefers-color-scheme:dark){.queue-table tr.flagged{background:#1E1A12}}
+.queue-table tr.flagged{background:var(--row-flag-bg)}
 </style>
 </head>
 <body>
@@ -50,16 +50,19 @@
   <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-between">
     <div style="display:flex;flex-direction:column;gap:4px">
       <h1 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:36px">Today’s plates</h1>
-      <p style="margin:0;color:var(--muted-2)">Photos arrive from the camera inbox. Only flagged plates need you.</p>
+      <p style="margin:0;color:var(--muted-2)">Photos arrive from the camera inbox or a batch upload. Only flagged plates need you.</p>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
       <label style="display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted-2)">Reviewer
-        <input id="reviewerName" type="text" value="" placeholder="S. Luque" style="font:400 15px 'Source Sans 3',sans-serif;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);width:180px">
+        <input id="reviewerName" type="text" value="" placeholder="Your name" style="font:400 15px 'Source Sans 3',sans-serif;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);width:180px">
       </label>
-      <button id="approveCleanBtn" class="btn" style="background:var(--ok);color:#fff;border-color:var(--ok)">Approve 5 clean plates</button>
-      <button id="exportBtn" class="btn">Export CSV</button>
+      <button id="approveCleanBtn" class="btn" style="background:var(--ok);color:var(--on-ok);border-color:var(--ok)">Approve 5 clean plates</button>
+      <button id="uploadBtn" class="btn" type="button" title="Analyse many plates at once (JPG/PNG/TIFF, up to 50)">Upload plates</button>
+      <input id="uploadInput" type="file" accept="image/jpeg,image/png,image/tiff" multiple hidden>
+      <button id="exportBtn" class="btn" title="One row per plate: plate_id, location, time, count, status, reasons, reviewed_by, reviewed_at, run_id">Export CSV</button>
     </div>
   </div>
+  <p id="batchStatus" role="status" aria-live="polite" style="margin:0;color:var(--muted-2);font-size:14px" hidden></p>
 
   <div class="summary-cards">
     <div class="summary-card"><div class="big" id="sumReceived">—</div><div style="color:var(--muted-2);font-size:14px">plates received</div></div>
@@ -90,6 +93,27 @@ const reviewerInput=document.getElementById("reviewerName");
 const approveCleanBtn=document.getElementById("approveCleanBtn");
 const exportBtn=document.getElementById("exportBtn");
 if(exportBtn) exportBtn.addEventListener("click", ()=> window.location.href="/api/export.csv");
+// batch upload -> same fixed pipeline as the camera inbox; plates show up in the table as they finish
+const uploadBtn=document.getElementById("uploadBtn"), uploadInput=document.getElementById("uploadInput"), batchStatus=document.getElementById("batchStatus");
+if(uploadBtn) uploadBtn.addEventListener("click", ()=> uploadInput.click());
+if(uploadInput) uploadInput.addEventListener("change", async ()=>{
+  const files=[...uploadInput.files]; uploadInput.value="";
+  if(!files.length) return;
+  if(files.length>50){ batchStatus.hidden=false; batchStatus.textContent="Max 50 plates per batch — please split the upload."; return; }
+  const fd=new FormData(); files.forEach(f=> fd.append("images", f, f.name));
+  uploadBtn.disabled=true; batchStatus.hidden=false; batchStatus.textContent=`Uploading ${files.length} plate${files.length>1?"s":""}…`;
+  try{
+    const r=await fetch("/api/batch",{method:"POST",body:fd});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error((j.detail&&j.detail.hint)||("HTTP "+r.status));
+    let msg=`${j.accepted.length} plate${j.accepted.length===1?"":"s"} queued — each appears below when its analysis finishes.`;
+    if(j.rejected.length) msg+=` Skipped ${j.rejected.length}: `+j.rejected.map(x=>`${x.name} (${x.reason})`).join(", ");
+    batchStatus.textContent=msg;
+    // show everything so new clean plates are visible too
+    const allBtn=document.querySelector('[data-filter="all"]'); if(allBtn) allBtn.click();
+  }catch(e){ batchStatus.textContent="Upload failed: "+String(e.message||e).slice(0,200); }
+  finally{ uploadBtn.disabled=false; }
+});
 function pillClass(s){ const v=(s||"ok").toLowerCase(); if(v==="tntc") return "tntc"; if(v==="re-photo") return "rephoto"; if(v==="empty") return "empty"; if(v==="review") return "review"; if(v==="ok") return "ok"; if(v==="approved") return "approved"; return "ok"; }
 function updateApproveDisabled(){
   const hasName=!!reviewerInput.value.trim();
@@ -97,7 +121,8 @@ function updateApproveDisabled(){
   approveCleanBtn.title=hasName?"Approve clean plates":"Enter reviewer name first";
   document.querySelectorAll(".approve-btn").forEach(b=>{ b.disabled=!hasName; });
 }
-reviewerInput.value=localStorage.getItem("labvision_reviewer")||"S. Luque";
+try{ reviewerInput.value=localStorage.getItem("labvision_reviewer")||""; }catch(_){ reviewerInput.value=""; }
+updateApproveDisabled();
 reviewerInput.addEventListener("change",()=>{ localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()); updateApproveDisabled(); });
 reviewerInput.addEventListener("input",()=>{ localStorage.setItem("labvision_reviewer", reviewerInput.value.trim()); updateApproveDisabled(); });
 
@@ -171,7 +196,7 @@ function render(data){
     const isFlagged = r.needs_review && !r.reviewed_by;
     tr.style.borderBottom="1px solid var(--line)";
     if(isFlagged) tr.classList.add("flagged");
-    tr.style.background=isFlagged?"#FFFBF3":"transparent";
+    tr.classList.toggle("flagged", isFlagged);
     // Plate
     const td0=document.createElement("td"); td0.style.padding="14px 16px"; td0.style.fontFamily="JetBrains Mono,monospace"; td0.textContent=r.plate_id||r.run_id; tr.appendChild(td0);
     // Location

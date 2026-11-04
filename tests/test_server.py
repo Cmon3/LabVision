@@ -131,15 +131,16 @@ def test_analyze_stream_decided_by_honest(tmp_path, monkeypatch):
         model_events = [e for e in events if e.get("decided_by") == "model"]
         allowed = set(muse_tool_names + ["plan", "segment", "report"])
         for ev in model_events:
-            assert ev["step"] in allowed or ev["step"] in ["plan", "segment", "report"], f"unexpected model step {ev['step']} not from Muse"
+            assert ev["step"] in allowed or ev["step"].startswith("plan_"), f"unexpected model step {ev['step']} not from Muse"
             if ev["step"] == "segment" and "prompt" in ev.get("values", {}):
                 assert ev["values"]["prompt"] == "round spot", "keyword routing detected: prompt should be Muse's round spot, not black round spot"
-        plan_msgs = [e["message"] for e in events if e.get("step") == "plan"]
+        plan_msgs = [e["message"] for e in events if str(e.get("step", "")).startswith("plan_")]
+        assert plan_msgs, "expected one plan row per Muse turn"
         for m in plan_msgs:
             assert "check_quality" in m or "segment" in m or "measure" in m
-        res = [e for e in events if e.get("type") == "result"]
-        assert res, "no result event"
-        assert res[0]["data"]["experimental"] is False
+        # Muse ends with plain text and never calls submit_report -> paused, no unverified count shown
+        assert events[-1]["type"] == "error" and "8 turns" in events[-1]["error"]
+        assert not [e for e in events if e.get("type") == "result"]
 
 
 def test_correct_no_fabricated_mask(tmp_path, monkeypatch):

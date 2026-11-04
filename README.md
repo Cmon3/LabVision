@@ -28,7 +28,7 @@ Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entr
 ![Queue — review by exception](docs/img/queue.png)
 
 - **Labs with automated incubators/imagers**: the device's software sends each plate image to `POST /api/analyze` and receives `{count, masks, status, run_id}` + `GET /api/runs/{id}` (trace with `decided_by: rule` for inbox, `model` for streaming) and `GET /api/export.csv` for LIMS import. The agent runs as a service behind the API — no UI needed.
-- **Small labs without automation**: any camera (phone on a stand, USB camera) saves photos into `./inbox` (poll every 2 s, size unchanged for 2 s, temp+rename; QR code → plate ID else filename; optional sidecar `{location, sample_type, alert_limit}` — *example values only*). LabVision picks them up (`python server.py --inbox ./inbox` or `python -m labvision.inbox ./inbox`), runs the fixed pipeline (`count colonies`, `decided_by: rule`), and the technician only reviews flagged plates in the queue at `/app/queue`.
+- **Small labs without automation**: any camera (phone on a stand, USB camera) saves photos into `./inbox` (poll every 2 s, size unchanged for 2 s, temp+rename; QR code → plate ID else filename; optional sidecar `{location, sample_type, alert_limit}` — *example values only*). LabVision picks them up (`python server.py --inbox ./inbox` or `python -m labvision.inbox ./inbox`), runs the fixed pipeline (`count colonies`, `decided_by: rule`), and the technician only reviews flagged plates in the queue at `/app/queue`. No camera? **Upload plates** in the queue analyses a whole batch the same way.
 
 Diagram:
 
@@ -43,7 +43,8 @@ Review-by-exception: blurry/glare → **Re-photo** (amber), TNTC (>300) → **TN
 
 - `POST /api/analyze` — multipart `image` + `request` (e.g. `count colonies`) → `{run_id, count, count_label, status: OK|Re-photo|TNTC|Empty, image_url, masks_url, boxes, measurements, trace: [{name, status, decided_by, mean_confidence}], report, csv_url}`
 - `GET /api/runs/{id}` → same shape for a stored run (audit: `inputs.plate_id`, `inputs.location`, `params.plate_id`, `params.status`, `params.mean_confidence`)
-- `GET /api/export.csv?from=2026-11-01T00:00:00Z&to=2026-11-02T00:00:00Z` → `plate_id,location,time,count,status,reviewed_by,reviewed_at,run_id` (one row per run, for LIMS; alert limits are *example values only*)
+- `GET /api/export.csv?from=2026-11-01T00:00:00Z&to=2026-11-02T00:00:00Z` → `plate_id,location,time,count,status,reasons,reviewed_by,reviewed_at,run_id` (one row per run, for LIMS; alert limits are *example values only*)
+- `POST /api/batch` — multipart `images` (up to 50 JPG/PNG/TIFF) → `{batch_id, accepted, rejected}`; each plate runs the same fixed pipeline as the inbox (`count colonies`, `decided_by: rule`) in the background and appears in `/app/queue`. Same as the **Upload plates** button in the queue.
 - `POST /api/runs/{id}/approve` `{reviewer: "Name"}` → audit `approval.json` + `run.json:audit` with `decided_by: human`, `final_count`
 - OpenAPI docs at `/docs` — every endpoint has `summary` + example.
 

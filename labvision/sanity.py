@@ -214,7 +214,7 @@ def apply_box_guards(boxes, masks, confidences, plate_info: tuple[float, float, 
             if cur_conf:
                 cur_conf = [cur_conf[i] for i in kept_idx2]
     else:
-        trace_entries.append({"name": "plate_filter", "status": "ok", "decided_by": "rule", "discarded": 0, "reason": "no plate to filter"} )
+        trace_entries.append({"name": "plate_filter", "status": "ok", "decided_by": "rule", "discarded": 0, "disabled": True, "reason": "outside-plate filter off (benchmark: removed real edge colonies)"})
         stats["outside_plate_discarded"] = 0
         stats["outside_plate_near_rim"] = 0
         stats["outside_plate_flagged"] = 0
