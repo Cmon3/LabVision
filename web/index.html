@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/web/app.css?v=10">
-<script src="/web/theme.js?v=10"></script>
+<link rel="stylesheet" href="/web/app.css?v=11">
+<script src="/web/theme.js?v=11"></script>
 <style>
 /* App layout — Session 10 mock */
 .app-main{max-width:1360px;margin:0 auto;padding:24px 28px;display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
@@ -35,6 +35,7 @@
 .chip-row{display:flex;flex-wrap:wrap;gap:6px}
 .chip-row .sug-chip{font:400 14px "Source Sans 3",sans-serif;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 .chip-row .sug-chip.experimental{border:1px dashed var(--accent);background:var(--surface);color:var(--accent-soft-text)}
+.batch-btn{width:100%;margin-top:10px;border-style:dashed}
 .run-btn{font:600 17px "Source Sans 3",sans-serif;padding:14px;border-radius:10px;border:none;background:var(--ink);color:var(--bg)}
 .stop-btn{margin-left:auto;font:600 14px "Source Sans 3",sans-serif;padding:8px 14px;border-radius:8px;border:1.5px solid var(--fail);background:transparent;color:var(--fail);cursor:pointer}
 .stop-btn:hover{background:color-mix(in srgb, var(--fail) 12%, transparent)}
@@ -87,7 +88,7 @@
       <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Drop image or click to choose file">
         <div class="dz-icon">＋</div>
         <p class="dz-text"><strong>Drop image here</strong> or click to choose</p>
-        <p class="dz-hint">JPG, PNG, TIFF — plate or micrograph. Several plates? Select them all for a batch.</p>
+        <p class="dz-hint">JPG, PNG, TIFF — plate or micrograph</p>
         <input id="fileInput" type="file" accept="image/jpeg,image/png,image/tiff" multiple hidden>
         <img id="previewThumb" hidden alt="">
       </div>
@@ -97,6 +98,8 @@
         <button id="cameraCaptureBtn" class="btn" type="button" hidden>Capture</button>
         <button id="cameraCancelBtn" class="btn" type="button" hidden>Cancel</button>
       </div>
+      <button id="batchBtn" class="btn batch-btn" type="button" title="Analyse many plates at once (up to 50). They go to the review queue.">Upload a batch → review queue</button>
+      <input id="batchInput" type="file" accept="image/jpeg,image/png,image/tiff" multiple hidden>
       <div id="cameraWrap" hidden><video id="cameraVideo" autoplay playsinline muted></video><canvas id="cameraCanvas" hidden></canvas></div>
       <div id="examples" class="examples" aria-label="examples"><span class="label">Examples</span><div id="exampleThumbs" class="thumbs"></div></div>
       <!-- keep original cameraBtn id for JS compatibility -->
@@ -277,6 +280,6 @@ document.getElementById('modeAdd')?.addEventListener('click', ()=>{
   document.getElementById('modeAdd').dispatchEvent(new Event('click',{bubbles:true})); // let app.js handle
 });
 </script>
-<script src="/web/app.js?v=10"></script>
+<script src="/web/app.js?v=11"></script>
 </body>
 </html>

@@ -84,6 +84,7 @@ Agent must finish with `submit_report {summary, count, filters, notes}`. Code ch
 Held-out evaluation (dev/test split by image name, so test plates were never used for tuning).
 
 - **AGAR** (real plates, 20 test images): **mean error 11.8% per plate**, **6/20 exact**. Best SAM prompt on dev was `round spot` (MAE 3.05) vs `bacterial colony` (MAE 34.05); test MAE 17.7. One dense plate (298 colonies) was under-counted (31) — tiling and plate-crop did not help on dev.
+- **All 39 annotated AGAR plates** (adds the 19 dev plates used to choose the prompt, so optimistic — context only): mean error 9.2%, 22/39 within one colony, 29/39 within 10%. On the 20 test plates: 13/20 within one colony, 15/20 within 10%. See `bench/run_agar_all.py`.
 - **BBBC005** (synthetic cells, 200 in-focus `F1` images): **w1 (cell body) MAE 5.48**, **w2 (nuclei) MAE 18.95** (prompt `cell` for both; `nucleus` was worse at 52.6).
 
 Full tables in [bench/RESULTS.md](bench/RESULTS.md); raw counts in `bench/results.csv`. See the *Honest limits* section below for what did not work.

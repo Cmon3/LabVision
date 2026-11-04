@@ -102,11 +102,16 @@ fileInput.addEventListener("change", ()=>{
   const files=[...fileInput.files]; fileInput.value="";
   handleFiles(files);
 });
-// one plate -> analyse here with the agent; several -> batch into the review queue
-async function handleFiles(files){
+const batchBtn=document.getElementById("batchBtn"), batchInput=document.getElementById("batchInput");
+if(batchBtn && batchInput){
+  batchBtn.addEventListener("click", ()=> batchInput.click());
+  batchInput.addEventListener("change", ()=>{ const files=[...batchInput.files]; batchInput.value=""; handleFiles(files, true); });
+}
+// one plate -> analyse here with the agent; several (or the batch button) -> review queue
+async function handleFiles(files, forceBatch=false){
   files=files.filter(f=> /^image\//.test(f.type) || /\.(jpe?g|png|tiff?)$/i.test(f.name));
   if(!files.length) return;
-  if(files.length===1){ setFile(files[0], files[0].name); return; }
+  if(files.length===1 && !forceBatch){ setFile(files[0], files[0].name); return; }
   if(files.length>50){ setLeftStatus("Max 50 plates per batch — please split the selection."); return; }
   const fd=new FormData(); files.forEach(f=> fd.append("images", f, f.name));
   setLeftStatus(`Uploading ${files.length} plates to the review queue…`);

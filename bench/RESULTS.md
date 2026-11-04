@@ -156,3 +156,20 @@ Tuned on dev (19 plates) grid T=[1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0] x color_weig
 
 *Features: Lab bg-subtracted, circularity, log diam, texture; clustering average linkage T=2.5 color_weight=2.0; per-plate ARI/purity. n is small (20 plates). Files: bench/morphotypes_v2.csv, tuning.csv.*
 
+
+## AGAR all annotated plates (dev + test, n=39) — `bench/run_agar_all.py`
+
+Same pipeline and config (SAM 3.1 `round spot`, tiling 1, Python measure). Per-plate rows with
+their split in `bench/results_agar_all.csv`. One of the 40 local plates (1399) is excluded: its
+annotation has no usable count (`colonies_number: -1`).
+
+| split | n | MAE | mean % err | exact | within 1 colony | within 10% |
+|---|---:|---:|---:|---:|---:|---:|
+| **test** (held out — headline) | 20 | 17.70 | 11.8% | 6/20 | 13/20 | 15/20 |
+| dev (used to choose the prompt) | 19 | 3.05 | 6.5% | 5/19 | 9/19 | 14/19 |
+| all | 39 | 10.56 | 9.2% | 11/39 | 22/39 | 29/39 |
+
+- The dev numbers are optimistic by construction (the prompt was picked on them), so the
+  headline stays the test split. "All" is context, not a second result.
+- Test MAE is dominated by one dense plate (518: 298 true, 31 found); without it the other
+  19 test plates have MAE 4.6. The app flags such plates "possible undercount" for review.
