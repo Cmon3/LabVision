@@ -134,14 +134,13 @@ python bench/run_morphotypes_v2.py  # morphotype benchmark (GT boxes, no SAM)
 
 Keys are read from environment only and never logged. Every external call is cached by input hash in `runs/cache/`, so reruns are free.
 
-## Manual check (for Simon)
+## Try it in 5 minutes
 
-1. `python server.py` → `/` shows landing with hero “Colony counts you can audit.”
-2. **Try an example plate** opens `/app?example=14684` with plate loaded.
-3. Press **Run** → live steps tick one by one (spinner → ✓/!/✕ with model/rule badge).
-4. Click a suggested chip (e.g. “count black colonies (experimental)”) → request box fills.
-5. Run “count black colonies” → result shows **experimental — not benchmarked** and count; prompt in trace is `black round spot` from Muse.
-6. Report count matches trace/measurements table; `is this plate countable?` shows countable verdict.
+1. `python server.py` → open `http://127.0.0.1:8000/` (landing) then **Try an example plate** → plate loads in `/app?example=14684`.
+2. Press **Run** → watch **How it was verified** tick live (✓/!/✕ + model/rule badges) and see the count, viewer, and report.
+3. Draw a box around a missed colony → count updates (SAM point/box prompt); remove a false detection the same way.
+4. In another terminal `python server.py --inbox ./inbox` + `python scripts/simulate_camera.py --inbox ./inbox` → open `/app/queue`, set reviewer name, **Approve** a plate, **Export CSV** for LIMS.
+5. Try `is this plate countable?` or `count black colonies (experimental)` → check the countable verdict / experimental banner and that numbers still come from Python.
 
 ## License
 
