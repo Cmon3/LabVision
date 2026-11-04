@@ -827,7 +827,6 @@ async def api_correct(payload: dict):
                 raise HTTPException(status_code=502, detail={"error": "SAM found no colony here — try a box around it", "hint": "Drag a box around the colony, or use 'Mark manually' for +1 manual count"})
             b = seg.boxes[0]
             new_box = {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
-            boxes.append(new_box)
             # get new mask
             new_masks = seg.decoded_masks()
             new_mask = new_masks[0] if new_masks.shape[0] else np.zeros((h, w), dtype=bool)
@@ -839,9 +838,47 @@ async def api_correct(payload: dict):
                 if new_mask.shape == (bh, bw):
                     tmp[b.y1:b.y2, b.x1:b.x2] = new_mask
                     new_mask = tmp
-            # build masks array
-            if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
-                masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
+            # contrast guard: inside vs 10-20px ring (exclude other masks)
+            try:
+                from labvision.contrast import is_contrast_ok as _is_ok
+                from labvision.config import CONTRAST_THRESHOLD as _thr
+                _other = None
+                if existing_masks is not None and existing_masks.size and existing_masks.shape[0]:
+                    _other = np.any(existing_masks, axis=0)
+                # need RGB array for Lab
+                _arr_rgb = np.array(pil)  # pil already loaded earlier in scope? fallback to arr if not
+                try:
+                    _arr_rgb = np.array(pil)
+                except Exception:
+                    _arr_rgb = np.array(pil)
+                ok, dE = _is_ok(_arr_rgb, new_mask, _other, threshold=_thr)
+                action["contrast_dE"] = round(float(dE),2) if dE is not None else None
+                action["contrast_threshold"] = _thr
+                if not ok:
+                    raise HTTPException(status_code=400, detail={"error": "No colony visible here", "hint": f"Contrast dE={dE:.2f} below threshold {_thr} — not a colony", "dE": dE, "threshold": _thr})
+            except HTTPException:
+                raise
+            except Exception:
+                pass  # if contrast check fails, allow add
+            boxes.append(new_box)
+            # build masks array — handle empty case first
+            if existing_masks is not None and existing_masks.shape[0] == 0:
+                masks = new_mask[None, ...] if new_mask.shape == (h, w) else np.zeros((1, h, w), dtype=bool)
+                # if new_mask is small, place it
+                if new_mask.shape != (h, w):
+                    tmp = np.zeros((h, w), dtype=bool)
+                    bh = b.y2 - b.y1; bw = b.x2 - b.x1
+                    if new_mask.shape == (bh, bw):
+                        tmp[b.y1:b.y2, b.x1:b.x2] = new_mask
+                        masks[0] = tmp
+                    else:
+                        masks[0] = np.zeros((h, w), dtype=bool)
+            elif existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1:
+                # check dimensions match
+                if existing_masks.shape[1] != h or existing_masks.shape[2] != w:
+                    masks = new_mask[None, ...]
+                else:
+                    masks = np.concatenate([existing_masks, new_mask[None, ...]], axis=0)
             elif existing_masks is not None and len(boxes) == 1:
                 masks = new_mask[None, ...]
             else:
@@ -1044,7 +1081,7 @@ def api_run_detail(run_id: str):
 @app.post("/api/runs/{run_id}/approve", summary="Approve a run (human decision)", tags=["queue"])
 def api_approve(run_id: str, payload: dict):
     _validate_run_id(run_id)
-    reviewer = payload.get("reviewer") or payload.get("reviewed_by") or "technician"
+    reviewer = payload.get("reviewer") or payload.get("reviewed_by")
     if not reviewer or not str(reviewer).strip():
         raise HTTPException(status_code=400, detail={"error": "missing reviewer", "hint": "Send {reviewer: name}"})
     try:

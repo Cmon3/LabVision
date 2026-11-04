@@ -13,5 +13,10 @@ MORPHOTYPE_SCALES = [60.26381187221168, 1.9551829849709346, 11.839846114505011, 
 MORPHOTYPE_THRESHOLD = 2.5
 MORPHOTYPE_COLOR_WEIGHT = 2.0
 
+# Correct guard: Lab contrast inside mask vs 10-20px ring (bench/calibrate_contrast.py)
+# GT colonies (real) all dE>=7.9 mean 18.6 (n=10), empty-agar max 3.1 mean 1.3 (n=10)
+# thr 5.0 -> GT-pass 100% empty-reject 100% (thr 3.0 100%/90%)
+CONTRAST_THRESHOLD = 5.0
+
 # Queue: example alert limits (not clinical thresholds)
 ALERT_LIMIT_EXAMPLE = 100  # example only — shown as “example value” in UI/docs

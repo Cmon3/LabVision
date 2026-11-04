@@ -22,7 +22,9 @@ CACHE_DIR = Path("runs/cache")
 BOX_RE = re.compile(
     r"<\s*\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+);w=(\d+);h=(\d+)(?:;c=([0-9]*\.?[0-9]+))?[^|]*\|>"
 )
-MASK_RE = re.compile(r"<\s*\|mask;x=(\d+);y=(\d+);data=([^|]*?)(?:;c=([0-9]*\.?[0-9]+))?\|>")
+# mask may be ";c=..;data=.." or ";data=..;c=.."
+MASK_RE = re.compile(r"<\s*\|mask;x=(\d+);y=(\d+);[^|]*?data=([^|]+?)(?:;c=[0-9\.]+)?\s*\|>")
+MASK_RE_ALT = re.compile(r"<\s*\|mask;([^|]*)\|>")
 
 
 @dataclass(frozen=True)
@@ -218,6 +220,20 @@ def parse_output_text(output_text: str) -> tuple[list[Box], list[str], int, int,
     # fallback: also try mask c if box c missing
     mask_matches = MASK_RE.findall(output_text)
     raw_masks = [m[2] for m in mask_matches]
+    # fallback for c-before-data order: parse generic tag then extract data=
+    if not mask_matches:
+        for tag in MASK_RE_ALT.findall(output_text):
+            if "data=" in tag:
+                # extract x,y
+                import re as _re2
+                xm = _re2.search(r"x=(\d+)", tag); ym = _re2.search(r"y=(\d+)", tag)
+                dm = _re2.search(r"data=([^;|]+(?:,[^;|]+)*)", tag)
+                cm = _re2.search(r"c=([0-9]*\.?[0-9]+)", tag)
+                if dm:
+                    x = xm.group(1) if xm else "0"; y = ym.group(1) if ym else "0"
+                    c = cm.group(1) if cm else ""
+                    mask_matches.append((x, y, dm.group(1).strip(), c))
+                    raw_masks.append(dm.group(1).strip())
     # if boxes have no c but masks do, use mask c
     if mask_matches and all(cc is None for cc in confidences):
         for _, _, _, c in mask_matches:
@@ -271,9 +287,26 @@ def segment(
     path = _cache_path(img_hash, prompt)
     if use_cache and path.exists():
         d = json.loads(path.read_text())
+        boxes = [Box(**b) for b in d["boxes"]]
+        raw_masks = d["raw_masks"]
+        # migrate old cache where c-before-data was missed (boxes>raw_masks or empty payload)
+        needs_migrate = (len(boxes) != len(raw_masks) or any(not m for m in raw_masks)) and bool(d.get("output_text"))
+        if needs_migrate:
+            # re-parse with fixed regex
+            _b, _rm, _w, _h, _c = parse_output_text(d["output_text"])
+            if _b and _rm and len(_b) == len(_rm):
+                boxes, raw_masks = _b, _rm
+                d["boxes"] = [asdict(b) for b in boxes]
+                d["raw_masks"] = raw_masks
+                d["confidences"] = _c
+                try:
+                    path.write_text(json.dumps(d))
+                except Exception:
+                    pass
+                return Segmentation(boxes=boxes, raw_masks=raw_masks, width=d.get("width", _w), height=d.get("height", _h), cached=True, confidences=_c)
         return Segmentation(
-            boxes=[Box(**b) for b in d["boxes"]],
-            raw_masks=d["raw_masks"],
+            boxes=boxes,
+            raw_masks=raw_masks,
             width=d["width"],
             height=d["height"],
             cached=True,
