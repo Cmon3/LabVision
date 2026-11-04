@@ -102,20 +102,30 @@ def _escalate_needs_rephoto(run_id: str, reason: str, plate_id: str | None, what
 
 app = FastAPI(title="LabVision Copilot API")
 
+class _RevalidatingStaticFiles(StaticFiles):
+    """Static files the browser must revalidate (ETag) before reuse, so a new app.css / app.js
+    is picked up on the next load instead of a stale heuristically-cached copy."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 if WEB_DIR.exists():
-    app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+    app.mount("/web", _RevalidatingStaticFiles(directory=str(WEB_DIR), html=True), name="web")
 
     @app.get("/")
     def _landing():
-        return FileResponse(str(WEB_DIR / "landing.html"), media_type="text/html")
+        return FileResponse(str(WEB_DIR / "landing.html"), media_type="text/html", headers={"Cache-Control": "no-cache"})
 
     @app.get("/app")
     def _app():
-        return FileResponse(str(WEB_DIR / "index.html"), media_type="text/html")
+        return FileResponse(str(WEB_DIR / "index.html"), media_type="text/html", headers={"Cache-Control": "no-cache"})
 
     @app.get("/app/queue")
     def _queue():
-        return FileResponse(str(WEB_DIR / "queue.html"), media_type="text/html")
+        return FileResponse(str(WEB_DIR / "queue.html"), media_type="text/html", headers={"Cache-Control": "no-cache"})
 
     @app.api_route("/api/examples/file", methods=["GET", "HEAD"])
     def _example_file(path: str):
@@ -328,10 +338,14 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
     else:
         rows = measure_mod.measure_masks(masks)
     import re
-    m = re.search(r"larger than\s+([\d.]+)\s*mm", request, re.I)
-    if m and rows and "diameter_mm" in rows[0]:
+    m = re.search(r"(?:larger|bigger) than\s+([\d.]+)\s*mm", request, re.I)
+    m_small = re.search(r"smaller than\s+([\d.]+)\s*mm", request, re.I)
+    if (m or m_small) and rows and "diameter_mm" in rows[0]:
         try:
-            rows = measure_mod.filter_by_min_diameter(rows, float(m.group(1)))
+            if m:
+                rows = measure_mod.filter_by_min_diameter(rows, float(m.group(1)))
+            if m_small:
+                rows = measure_mod.filter_by_max_diameter(rows, float(m_small.group(1)))
         except Exception:
             pass
     _trace("measure", "ok", plate_diameter_px=pdiam, mm_per_px=round(mm_per_px, 4) if mm_per_px else None, count=len(rows), duration_ms=int((time.time()-t)*1000))
@@ -603,9 +617,33 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
                                 wtr = _csv.DictWriter(f, fieldnames=list(rows[0].keys()))
                                 wtr.writeheader()
                                 wtr.writerows(rows)
-                        # boxes
-                        (rdir / "boxes.json").write_text(json.dumps(_bl(seg)))
-                        status2 = _sf(ver.get("qc", {}), _out.get("count", 0))
+                        # boxes; if the agent applied a size filter, mark the colonies it excluded so the
+                        # viewer does not show more boxes than the count (same rule: diameter_mm >= min)
+                        boxes_out = _bl(seg)
+                        detected = len(boxes_out)
+                        _min = ver.get("applied_min_mm")
+                        _max = ver.get("applied_max_mm")
+                        _pd = ver.get("plate_diameter_px")
+                        if (_min is not None or _max is not None) and _pd and len(masks) == detected:
+                            _all = measure_mod.measure_masks(masks, plate_diameter_px=_pd)
+                            _keep = [(_min is None or r.get("diameter_mm", 0) >= _min) and (_max is None or r.get("diameter_mm", 0) < _max) for r in _all]
+                            if sum(_keep) == _out.get("count", 0):
+                                for _b, _k in zip(boxes_out, _keep):
+                                    if not _k:
+                                        _b["filtered_out"] = True
+                                png = _mp(masks[np.array(_keep, dtype=bool)], w2, h2)
+                                (rdir / "masks.png").write_bytes(png)
+                        (rdir / "boxes.json").write_text(json.dumps(boxes_out))
+                        # Empty / TNTC describe the whole plate: with a size filter use all detections
+                        _filtered = _min is not None or _max is not None
+                        status2 = _sf(ver.get("qc", {}), detected if _filtered else _out.get("count", 0))
+                        review_reasons = []
+                        if ver.get("possible_undercount"):
+                            review_reasons.append("possible undercount (dense plate)")
+                        if ver.get("implausible_size_count"):
+                            review_reasons.append(f"{ver['implausible_size_count']} colonies with implausible size")
+                        if status2 == "OK" and review_reasons:
+                            status2 = "Review"
                         api_res = {
                             "run_id": _run_id,
                             "status": status2,
@@ -615,7 +653,11 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
                             "image_h": h2,
                             "image_url": f"/api/runs/{_run_id}/image.png",
                             "masks_url": f"/api/runs/{_run_id}/masks.png",
-                            "boxes": _bl(seg),
+                            "boxes": boxes_out,
+                            "detected": detected,
+                            "min_diameter_mm": _min,
+                            "max_diameter_mm": _max,
+                            "review_reasons": review_reasons,
                             "measurements": _ms(rows),
                             "colony_types": [],
                             "trace": trace,

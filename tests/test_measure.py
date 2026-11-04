@@ -49,3 +49,10 @@ def test_measure_mm_scale_and_filter_2mm():
 
 def test_empty_stack_returns_empty():
     assert measure_masks(np.zeros((0, 4, 4), dtype=bool)) == []
+
+
+def test_filter_by_max_diameter_smaller_than():
+    from labvision.measure import filter_by_max_diameter
+    rows = [{"index": 0, "diameter_mm": 0.8}, {"index": 1, "diameter_mm": 3.0}, {"index": 2, "diameter_mm": 5.2}]
+    assert [r["index"] for r in filter_by_max_diameter(rows, 3.0)] == [0]  # strict: 3.0 is not < 3.0
+    assert [r["index"] for r in filter_by_max_diameter(rows, 6)] == [0, 1, 2]

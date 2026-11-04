@@ -29,7 +29,9 @@ def _numbers_in_text(text: str) -> list[str]:
 
 def _countable_wording(text: str, count: int) -> bool:
     """True if text correctly reflects countable range 30-300."""
-    low = "too few" in text.lower() and ("<30" in text or "30" in text)
+    t = text.lower()
+    # must match the feedback the model gets: "too few" or "low statistical reliability"
+    low = "too few" in t or "low statistical reliability" in t
     tntc = "tntc" in text.lower() or "too numerous to count" in text.lower()
     if count < 30:
         return low or tntc  # accept tntc wording for low? spec says "TNTC / too few"

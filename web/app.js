@@ -34,6 +34,7 @@ function pillClass(status){
   if(s==="re-photo") return "rephoto";
   if(s==="empty") return "empty";
   if(s==="ok") return "ok";
+  if(s==="review") return "warn";
   // legacy: blurry/glare map to re-photo
   if(s==="blurry"||s==="glare") return "rephoto";
   return "ok";
@@ -350,8 +351,12 @@ function renderResult(data){
   const isT=isTNTC(data.status, data.count);
   countBig.textContent = data.count_label || (isT ? "TNTC >300" : data.count+" CFU");
   countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h} · ${data.duration_ms||""} ms` + (data.experimental?" · experimental — not benchmarked":"") : (data.experimental?"experimental — not benchmarked":"");
+  const _rng=[]; if(data.min_diameter_mm!=null) _rng.push(`≥ ${data.min_diameter_mm} mm`); if(data.max_diameter_mm!=null) _rng.push(`< ${data.max_diameter_mm} mm`);
+  if(_rng.length && data.detected>data.count){
+    countSub.textContent = `${data.count} of ${data.detected} detected are ${_rng.join(" and ")} (excluded ones: dashed boxes) · ` + countSub.textContent;
+  }
   const s=(data.status||"ok").toLowerCase();
-  statusPill.textContent = s==="tntc" ? "TNTC — dilute & re-plate" : s==="re-photo" ? "Re-photo — retake" : s==="empty" ? "Empty" : "OK";
+  statusPill.textContent = s==="tntc" ? "TNTC — dilute & re-plate" : s==="re-photo" ? "Re-photo — retake" : s==="empty" ? "Empty" : s==="review" ? "Review — "+((data.review_reasons||[])[0]||"check count") : "OK";
   statusPill.className="pill "+pillClass(data.status);
   loadViewerImages(data);
   renderTrace(data.trace||[]);
@@ -479,10 +484,15 @@ function drawViewer(){
         ctx.strokeStyle="#C8892B"; ctx.lineWidth=Math.max(2, Math.round(w/500));
         ctx.fillStyle="rgba(200,137,43,0.15)";
         ctx.fillRect(b.x1, b.y1, b.x2-b.x1, b.y2-b.y1);
+      } else if(b.filtered_out){
+        // excluded by the size filter: dashed grey, not counted
+        ctx.strokeStyle="rgba(160,170,168,0.7)"; ctx.lineWidth=Math.max(1, Math.round(w/900));
+        ctx.setLineDash([Math.max(4,w/200), Math.max(3,w/300)]);
       } else {
         ctx.strokeStyle="#1F6F6A"; ctx.lineWidth=Math.max(1, Math.round(w/700));
       }
       ctx.strokeRect(b.x1, b.y1, b.x2-b.x1, b.y2-b.y1);
+      ctx.setLineDash([]);
     }
   }
   if(lastResult._lastClick){

@@ -185,3 +185,13 @@ def test_reject_with_notes_revised(tmp_path, monkeypatch):
     status = (tmp_path/"runs"/"run_signoff_test"/"status.json")
     if status.exists():
         assert "running" in status.read_text()
+
+
+def test_too_few_accepts_the_wording_the_feedback_asks_for():
+    """The refusal tells the model: say 'too few' or 'low statistical reliability'. Both must pass
+    (regression: the rule also demanded the number 30, so the model could never satisfy it)."""
+    from verification.verify_report import _countable_wording
+    assert _countable_wording("The number of colonies smaller than 5 mm is too few for conclusions.", 14)
+    assert _countable_wording("This count has low statistical reliability.", 14)
+    assert not _countable_wording("Colonies look fine.", 14)
+    assert not _countable_wording("This is too few.", 120)  # countable plate must not say too few

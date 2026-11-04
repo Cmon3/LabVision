@@ -72,3 +72,39 @@ def test_empty_qc_flag():
         with patch.object(ag, "segment", return_value=fake_seg):
             out = ag.run_agent(p, "count", use_cache=False)
     assert "Count:" in out["report"]
+
+
+def test_smaller_than_filter_applied_and_reported(tmp_path):
+    """'smaller than' -> measure(max_diameter_mm): count and report reflect only the small colonies."""
+    from PIL import Image
+    p = tmp_path / "img.png"
+    Image.new("RGB", (100, 100), "white").save(p)
+    seq = [
+        {"name": "check_quality", "arguments": "{}"},
+        {"name": "segment", "arguments": json.dumps({"prompt": "round spot"})},
+        {"name": "measure", "arguments": json.dumps({"max_diameter_mm": 15})},
+        {"name": "submit_report", "arguments": json.dumps({"summary": "Small colonies counted.", "count": 1, "filters": "max_diameter 15 mm", "notes": ""})},
+    ]
+    i = {"n": 0}
+
+    def fake_muse(*a, **k):
+        tc = seq[min(i["n"], len(seq) - 1)]
+        i["n"] += 1
+        return {"choices": [{"message": {"role": "assistant", "tool_calls": [{"id": str(i["n"]), "function": tc}]}}]}
+
+    fake_seg = type("S", (), {})()
+    fake_seg.boxes = [None, None]
+    fake_seg.confidences = [None, None]
+    fake_seg.width = fake_seg.height = 100
+    masks = np.zeros((2, 100, 100), dtype=bool)
+    masks[0, 10:20, 10:20] = True   # ~11 px -> ~11 mm with a 90 px plate
+    masks[1, 30:50, 30:50] = True   # ~23 px -> ~23 mm
+    fake_seg.decoded_masks = lambda: masks
+
+    with patch.object(ag, "_call_muse", side_effect=fake_muse), \
+         patch.object(ag, "segment", return_value=fake_seg), \
+         patch("labvision.plate.detect_plate", return_value=(90.0, 50.0, 50.0)):
+        out = ag.run_agent(p, "count colonies smaller than 15 mm", use_cache=False)
+    assert out["count"] == 1
+    assert "Filter applied: diameter < 15 mm" in out["report"]
+    assert out["verification"]["applied_max_mm"] == 15.0

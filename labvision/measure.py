@@ -78,6 +78,19 @@ def filter_by_min_diameter(rows: list[dict], min_diameter_mm: float) -> list[dic
     return kept
 
 
+def filter_by_max_diameter(rows: list[dict], max_diameter_mm: float) -> list[dict]:
+    """Keep only rows with diameter_mm < max_diameter_mm ("smaller than")."""
+    if max_diameter_mm <= 0:
+        raise ValueError("max_diameter_mm must be > 0")
+    kept = []
+    for row in rows:
+        if "diameter_mm" not in row:
+            raise ValueError("rows need diameter_mm: pass plate_diameter_px to measure_masks")
+        if row["diameter_mm"] < max_diameter_mm:
+            kept.append(row)
+    return kept
+
+
 def count_colonies(rows: list[dict]) -> int:
     """Number of colonies in an (already filtered) measurement list."""
     return len(rows)

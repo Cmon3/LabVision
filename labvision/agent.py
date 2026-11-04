@@ -58,11 +58,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "measure",
-            "description": "Measure current masks: count, areas, diameters (mm if plate detected, otherwise px). Optionally filter by min_diameter_mm.",
+            "description": "Measure current masks: count, areas, diameters (mm if plate detected, otherwise px). Optionally filter by size: min_diameter_mm for 'larger than', max_diameter_mm for 'smaller than' (both for a range).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "min_diameter_mm": {"type": "number", "description": "filter: keep only colonies >= this diameter in mm"},
+                    "min_diameter_mm": {"type": "number", "description": "filter: keep only colonies >= this diameter in mm ('larger than')"},
+                    "max_diameter_mm": {"type": "number", "description": "filter: keep only colonies < this diameter in mm ('smaller than')"},
                 },
                 "required": [],
             },
@@ -351,7 +352,8 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
         {"role": "system", "content": _instructions()},
         {"role": "user", "content": f"Image: {image_path.name}\nRequest: {request}\nUse tools to answer."},
     ]
-    applied_min_mm: float | None = None  # filter actually applied by measure (not just asked for)
+    applied_min_mm: float | None = None  # filters actually applied by measure (not just asked for)
+    applied_max_mm: float | None = None
     for turn in range(MAX_TURNS):
         if should_stop is not None and should_stop():
             _emit({"type": "step", "step": "cancelled", "status": "warn", "message": "Analysis cancelled by the user", "values": {}, "decided_by": "human"})
@@ -511,10 +513,14 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
                         plate_detected = False
                         reason = _guard_stats.get("plate_not_found") and "plate not found (diameter outside 40-98% of image side)" or "No plate detected"
                         _emit({"type": "step", "step": "plate", "status": "warn", "message": f"{reason} — sizes in px", "values": {"plate_diameter_px": None, "reason": reason}, "decided_by": "rule"})
-                    if "min_diameter_mm" in args:
+                    if "min_diameter_mm" in args or "max_diameter_mm" in args:
                         if rows and "diameter_mm" in rows[0]:
-                            rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
-                            applied_min_mm = float(args["min_diameter_mm"])
+                            if "min_diameter_mm" in args:
+                                rows = measure_mod.filter_by_min_diameter(rows, args["min_diameter_mm"])
+                                applied_min_mm = float(args["min_diameter_mm"])
+                            if "max_diameter_mm" in args:
+                                rows = measure_mod.filter_by_max_diameter(rows, args["max_diameter_mm"])
+                                applied_max_mm = float(args["max_diameter_mm"])
                         else:
                             result = {"error": "no plate detected — sizes in px, cannot filter by mm", "plate_detected": False}
                             measure_rows = rows
@@ -735,17 +741,25 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
 
     import re
 
-    m = re.search(r"larger than\s+([\d.]+)\s*mm", request, re.I)
+    m = re.search(r"(?:larger|bigger) than\s+([\d.]+)\s*mm", request, re.I)
+    m_small = re.search(r"smaller than\s+([\d.]+)\s*mm", request, re.I)
+    _applied = []
     if applied_min_mm is not None:
-        filter_line = f"Filter applied: diameter >= {applied_min_mm:g} mm"
-    elif m:
-        filter_line = f"Filter requested (>= {m.group(1)} mm) but not applied — count is all colonies"
-    else:
-        filter_line = ""
+        _applied.append(f"diameter >= {applied_min_mm:g} mm")
+    if applied_max_mm is not None:
+        _applied.append(f"diameter < {applied_max_mm:g} mm")
+    _missing = []
+    if m and applied_min_mm is None:
+        _missing.append(f">= {m.group(1)} mm")
+    if m_small and applied_max_mm is None:
+        _missing.append(f"< {m_small.group(1)} mm")
+    filter_line = ("Filter applied: " + " and ".join(_applied)) if _applied else ""
+    if _missing:
+        filter_line = (filter_line + "\n" if filter_line else "") + f"Filter requested ({', '.join(_missing)}) but not applied — count includes those colonies"
     mm_part = f" ({mean_mm:.2f} mm)" if has_mm else ""
     plate_note = "Plate detected — sizes in mm (90 mm plate)" if has_mm else "No plate detected — sizes in px"
     # if request asked for mm filter but no plate, note it
-    if m and not has_mm:
+    if (m or m_small) and not has_mm:
         plate_note += " (cannot filter by mm without plate)"
 
     rephoto_line = f"Action: Please retake photo — {rephoto_reason}" if rephoto_reason else ""
@@ -833,6 +847,11 @@ def run_agent(image_path: str | Path, request: str, use_cache: bool = True, on_e
         "count": count,
         "seg_boxes": len(seg_result.boxes) if seg_result else 0,
         "experimental": experimental,
+        # filter actually applied by measure, and rule-based review flags (labvision/sanity.py)
+        "applied_min_mm": applied_min_mm,
+        "applied_max_mm": applied_max_mm,
+        "possible_undercount": bool(_guard_stats.get("possible_undercount")),
+        "implausible_size_count": int(_guard_stats.get("implausible_size_count", 0) or 0),
     }
     # determine final status
     final_status = "done"
