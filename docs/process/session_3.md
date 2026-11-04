@@ -5,7 +5,7 @@ Runtime models Meta only. Never output organism/species names or the word "diagn
 Budget: max 300 SAM images, batch Muse calls.
 
 ## Step 0 — commit pending edits
-BUILD_LOG.md and PLAN.md were edited by hand (species-refusal finding, T6b revised). Commit them.
+BUILD_LOG.md and docs/process/PLAN.md were edited by hand (species-refusal finding, T6b revised). Commit them.
 
 ## Step 1 — fixes from code review
 a) agent.py: default segment prompt = config.AGAR_PROMPT ("round spot"), not "bacterial colony".

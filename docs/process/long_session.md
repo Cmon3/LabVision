@@ -5,7 +5,7 @@ If a step is blocked, write the blocker in BUILD_LOG.md, skip to the next step t
 does not depend on it, and keep going.
 
 ## Rules for this session
-- Read AGENTS.md, PLAN.md, docs/sam_api.md once at the start. Do not re-read the whole repo.
+- Read AGENTS.md, docs/process/PLAN.md, docs/sam_api.md once at the start. Do not re-read the whole repo.
 - After EACH step: run `.venv/bin/python -m pytest -q`; if green, add one line to
   BUILD_LOG.md and `git commit` (message starts with the task ID). Push after each commit.
 - SAM budget for the whole session: max 400 images (~$1). Always use the cache.

@@ -4,7 +4,7 @@ Work through the steps IN ORDER. Unattended: do not ask questions. If blocked, l
 BUILD_LOG.md and continue with the next step that does not depend on it.
 
 ## Rules
-- Read AGENTS.md, PLAN.md, docs/sam_api.md once. Don't re-read the whole repo.
+- Read AGENTS.md, docs/process/PLAN.md, docs/sam_api.md once. Don't re-read the whole repo.
 - After EACH step: `.venv/bin/python -m pytest -q`; if green, one BUILD_LOG.md line, commit
   (message starts with task ID), push.
 - Budget for this session: max 1,500 SAM images (~$4) and keep Baseten calls batched.

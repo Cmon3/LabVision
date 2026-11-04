@@ -1,6 +1,6 @@
 # AGENTS.md — rules for coding agents in this repo
 
-Read this file and PLAN.md only. Do not scan the whole repo.
+Read this file and docs/process/PLAN.md only. Do not scan the whole repo.
 
 ## Project
 LabVision Copilot: an agent that takes a lab image (plate or cell micrograph) plus a
@@ -26,7 +26,7 @@ Python 3.11+, requests, numpy, opencv-python-headless, scikit-image, pandas,
 gradio, pytest. Ask before adding any other dependency.
 
 ## How to work (token budget matters)
-- One task per session. The task comes from PLAN.md, by its ID (e.g. "do T3").
+- One task per session. The task comes from docs/process/PLAN.md, by its ID (e.g. "do T3").
 - Open only the files the task names. Never read `data/`, `runs/`, `.env`, images,
   or large outputs.
 - Reply with a short plan (max 5 lines), then the code change. No long explanations.

@@ -8,7 +8,7 @@ Plate photo + plain request → colony count you can audit.
 
 ## Built during the hackathon
 
-Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entry in the Meta Global AI Developer Hackathon (Indie track). See the dated [BUILD_LOG.md](BUILD_LOG.md) for what was built and when.
+Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entry in the Meta Global AI Developer Hackathon (Indie track). See the dated [BUILD_LOG.md](BUILD_LOG.md) for what was built and when. How it was built: [docs/process/](docs/process/) — plan, per-session instruction files, and design mockups.
 
 ## What it does
 

@@ -3,7 +3,7 @@ Deadline: submit Wed Nov 4. Scope decided by Simon: polish + README + voice inpu
 After each step: pytest green -> BUILD_LOG line -> commit -> push.
 
 ## Step 0 — housekeeping
-Commit docs/session_3.md, docs/session_4.md, docs/session_5.md. Make sure .gitignore keeps
+Commit docs/process/session_3.md, docs/process/session_4.md, docs/process/session_5.md. Make sure .gitignore keeps
 data/, runs/, .env, .venv, opencode.json out. Run a secret scan (grep for key prefixes) on
 the full history.
 
