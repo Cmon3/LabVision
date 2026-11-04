@@ -283,7 +283,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
             experimental = True
     except Exception as e:
         _trace("segment", "fail", error=str(e)[:200])
-        raise HTTPException(status_code=502, detail={"error": "SAM segmentation failed", "hint": str(e)[:300]})
+        logger.exception("segment failed: %s", e)
+        raise HTTPException(status_code=502, detail={"error": "SAM segmentation failed", "hint": "Check API keys in .env and try again."})
 
     t = time.time()
     # --- Sanity guards 1,2,4: plate + dedup + outside ---
@@ -893,7 +894,8 @@ async def api_correct(payload: dict):
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=502, detail={"error": str(e)[:300], "hint": "SAM add failed"})
+            logger.exception("SAM add failed: %s", e)
+            raise HTTPException(status_code=502, detail={"error": "SAM add failed", "hint": "Check API keys in .env and try again."})
 
     boxes_path.write_text(json.dumps(boxes))
     # save masks for future edits

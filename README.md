@@ -19,7 +19,8 @@ Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entr
 - **Self-check retry** — if SAM returns 0 but the image is sharp, retry once with the alternate prompt `colonies`.
 - **Descriptive colony-type table** — Python features (Lab colour minus agar background, circularity, log diameter, texture) are clustered in Python (fixed global scales, average linkage); Muse Spark Open writes a short description per group from a constrained vocabulary (colours, shapes, margins, elevations, surfaces). The table is descriptive only.
 - **Voice input** — click the mic, say “count colonies larger than 2 mm” hands-free (gloves, biosafety cabinet); Muse Voice Transcribe fills the request box.
-- **Human in the loop** — in the Result tab, one click fixes a missed colony (SAM point prompt adds a mask) or removes a false detection; the table, report and CSV update and every edit is logged separately from model output.
+- **Human in the loop** — draw a box around a missed colony (SAM box/point prompt) in the Result tab; accepted only if it contrasts with the surrounding agar (“No colony visible here” otherwise). Removing a false detection and every edit is logged separately from model output.
+- **Sanity guards** — duplicates (IoU), plate size check (40–98% of image), implausible sizes (0.1–15 mm flagged), dense-plate undercount flag.
 - **Audit log + CSV** — every run writes `run.json` (inputs, model ids, params, including voice transcript and corrections) and `results.csv`.
 
 ## Where it fits — a module, not a monolith
@@ -75,7 +76,7 @@ Agent must finish with `submit_report {summary, count, filters, notes}`. Code ch
 | Prompt is `round spot`/`colonies`/`cell` or report marked `experimental` | refused |
 | No organism names, no `diagnosis`/`diagnose` | refused |
 
-3 refusals → `report_refused` escalation (reviewer guidance). Pass → `awaiting_signoff` (approve/reject). QC fail → `needs_rephoto` (new photo with same QR/plate_id in `./inbox` auto-resumes). Loop: one tool/turn, turn limit 8, `paused` on API error, progress saved every turn in `runs/<id>/progress.json`, system instructions in `labvision/system_instructions.md`. See [VERIFICATION.md](VERIFICATION.md) + [ESCALATION_RULES.md](ESCALATION_RULES.md). Tests use scripted fake model (`tests/fake_model.py`) with recorded SAM outputs — `86 passed`.
+3 refusals → `report_refused` escalation (reviewer guidance). Pass → `awaiting_signoff` (approve/reject). QC fail → `needs_rephoto` (new photo with same QR/plate_id in `./inbox` auto-resumes). Loop: one tool/turn, turn limit 8, `paused` on API error, progress saved every turn in `runs/<id>/progress.json`, system instructions in `labvision/system_instructions.md`. See [VERIFICATION.md](VERIFICATION.md) + [ESCALATION_RULES.md](ESCALATION_RULES.md). Tests use scripted fake model (`tests/fake_model.py`) with recorded SAM outputs.
 
 ## Results
 
@@ -88,9 +89,9 @@ Full tables in [bench/RESULTS.md](bench/RESULTS.md); raw counts in `bench/result
 
 ## Honest limits (verifiable-agent section)
 
-- **Muse Spark Open declines organism identification** on safety grounds (biological-risk policy). We do not name organisms/species and do not provide a diagnosis. Raw refusals are logged in `runs/characterize_raw/`.
+- **Muse Spark Open declines organism identification** on safety grounds (biological-risk policy). We do not name organisms/species and do not provide a diagnosis. Raw refusals are logged locally in `runs/characterize_raw/` (not in the repo).
 - **The mixed-culture flag was removed.** We tried flagging mixed plates from morphology; on test it scored **80%** (16/20) vs the trivial “always pure” baseline **90%** (18/20 pure), and missed the one `Contamination` plate. A rule fixed in advance removed the flag when it did not beat the baseline. Details in `bench/morphotypes_v2_metrics.json`; n=20 is small.
-- **Dense plates (>300)** are reported as TNTC. Counting fails on very dense plates (e.g. AGAR 518.jpg).
+- **Dense plates** — plates over 300 are TNTC; dense plates with few detections (e.g. AGAR 518: 298 true, 31 found) are flagged “possible undercount” for review, never OK.
 - **Small n** — AGAR test is 20 plates; BBBC005 is 200 synthetic images.
 
 ## Meta models used
@@ -139,7 +140,7 @@ Keys are read from environment only and never logged. Every external call is cac
 1. `python server.py` → open `http://127.0.0.1:8000/` (landing) then **Try an example plate** → plate loads in `/app?example=14684`.
 2. Press **Run** → watch **How it was verified** tick live (✓/!/✕ + model/rule badges) and see the count, viewer, and report.
 3. Draw a box around a missed colony → count updates (SAM point/box prompt); remove a false detection the same way.
-4. In another terminal `python server.py --inbox ./inbox` + `python scripts/simulate_camera.py --inbox ./inbox` → open `/app/queue`, set reviewer name, **Approve** a plate, **Export CSV** for LIMS.
+4. Stop the server and restart it with `--inbox ./inbox`, then in a second terminal run the camera simulator `python scripts/simulate_camera.py --inbox ./inbox` → open `/app/queue`, set reviewer name, **Approve** a plate, **Export CSV** for LIMS.
 5. Try `is this plate countable?` or `count black colonies (experimental)` → check the countable verdict / experimental banner and that numbers still come from Python.
 
 ## License
