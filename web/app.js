@@ -196,6 +196,10 @@ loadExamples();
 (async function tryLoadRunId(){
   const rid=new URLSearchParams(location.search).get("run_id");
   if(!rid) return;
+  // opened from the queue: offer a way back and highlight the queue tab
+  const back=document.getElementById("backToQueue");
+  if(back) back.hidden=false;
+  document.querySelectorAll(".nav a").forEach(a=> a.classList.toggle("active", a.getAttribute("href")==="/app/queue"));
   try{
     const r=await fetch(`/api/runs/${encodeURIComponent(rid)}`);
     if(!r.ok) throw new Error("run not found");

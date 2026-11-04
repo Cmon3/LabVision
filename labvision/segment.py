@@ -23,7 +23,7 @@ BOX_RE = re.compile(
     r"<\s*\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+);w=(\d+);h=(\d+)(?:;c=([0-9]*\.?[0-9]+))?[^|]*\|>"
 )
 # mask may be ";c=..;data=.." or ";data=..;c=.."
-MASK_RE = re.compile(r"<\s*\|mask;x=(\d+);y=(\d+);[^|]*?data=([^|]+?)(?:;c=[0-9\.]+)?\s*\|>")
+MASK_RE = re.compile(r"<\s*\|mask;x=(\d+);y=(\d+);[^|]*?data=([^|]+?)(?:;c=([0-9\.]+))?\s*\|>")
 MASK_RE_ALT = re.compile(r"<\s*\|mask;([^|]*)\|>")
 
 

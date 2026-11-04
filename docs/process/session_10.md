@@ -1,5 +1,5 @@
 # Session 10 — apply the visual design (Tue Nov 3). Approved by Simon.
-Reference mockups (static, made with Claude's design canvas): docs/process/design/landing.mock.html,
+Reference mockups (static): docs/process/design/landing.mock.html,
 docs/process/design/app.mock.html, docs/process/design/queue.mock.html. They are DESIGN REFERENCES, not code
 to ship: they use a special <x-dc> format; copy the look (layout, colours, type, spacing,
 copy), not the markup. The user is present. After each step: tests green -> BUILD_LOG line ->

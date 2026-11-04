@@ -82,7 +82,7 @@ Agent must finish with `submit_report {summary, count, filters, notes}`. Code ch
 
 Held-out evaluation (dev/test split by image name, so test plates were never used for tuning).
 
-- **AGAR** (real plates, 20 test images): **mean error 11.8% per plate**, **7/20 exact**. Best SAM prompt on dev was `round spot` (MAE 3.05) vs `bacterial colony` (MAE 34.05); test MAE 17.7. One dense plate (298 colonies) was under-counted (31) — tiling and plate-crop did not help on dev.
+- **AGAR** (real plates, 20 test images): **mean error 11.8% per plate**, **6/20 exact**. Best SAM prompt on dev was `round spot` (MAE 3.05) vs `bacterial colony` (MAE 34.05); test MAE 17.7. One dense plate (298 colonies) was under-counted (31) — tiling and plate-crop did not help on dev.
 - **BBBC005** (synthetic cells, 200 in-focus `F1` images): **w1 (cell body) MAE 5.48**, **w2 (nuclei) MAE 18.95** (prompt `cell` for both; `nucleus` was worse at 52.6).
 
 Full tables in [bench/RESULTS.md](bench/RESULTS.md); raw counts in `bench/results.csv`. See the *Honest limits* section below for what did not work.
@@ -113,7 +113,7 @@ Research and QC quantification (pharma, food/water, teaching) with human review.
 
 ## Data
 
-Only public or synthetic data is used. No images are committed to the repository except the demo screenshot above.
+Only public or synthetic data is used. No dataset images are committed to the repository; only the UI screenshots in `docs/img/` and `web/img/` (the demo plate is AGAR 14684, CC BY-NC 2.0, credited below).
 
 - **BBBC005** — synthetic cell images, CC0, via the Broad Bioimage Benchmark Collection.
 - **AGAR** higher- and lower-resolution sample — CC BY-NC 2.0, Majchrowska et al. 2021, *AGAR: annotated dataset for automatic detection of colonies* (arXiv:2108.01234). Citations and licence checks in [data/README.md](data/README.md).
