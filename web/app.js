@@ -163,6 +163,12 @@ async function loadExamples(){
       img.addEventListener("error", ()=>{ img.style.display="none"; });
       wrap.appendChild(img);
       const lab=document.createElement("div"); lab.className="thumb-label"; lab.textContent=ex.name||"example";
+      if(ex.true_count!=null){
+        const tc=document.createElement("div"); tc.className="thumb-label"; tc.style.opacity=".8";
+        tc.textContent=`${ex.true_count} true`;
+        img.title=`${ex.name}: ${ex.true_count} colonies (AGAR annotation) — ${ex.note||""}`;
+        lab.appendChild(document.createElement("br")); lab.appendChild(tc);
+      }
       wrap.appendChild(lab);
       exampleThumbs.appendChild(wrap);
     }

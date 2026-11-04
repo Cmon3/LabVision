@@ -1084,21 +1084,29 @@ async def api_transcribe(audio: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"error": "internal error", "hint": "Check META_API_KEY and audio format (WAV mono 16-bit 24kHz)."})
 
 
+# Example plates from the AGAR held-out test split (bench/results_agar.csv), chosen to cover
+# the whole range — including where counting fails — so testers see both. true = AGAR annotation.
+_AGAR = "data/agar_demo/AGAR_representative"
+EXAMPLES = [
+    (f"{_AGAR}/lower-resolution/14684.jpg", 55, "typical plate (demo)"),
+    (f"{_AGAR}/higher-resolution/bright/356.jpg", 4, "very few: < 30 warning"),
+    (f"{_AGAR}/higher-resolution/dark/4826.jpg", 11, "dark background"),
+    (f"{_AGAR}/higher-resolution/dark/5270.jpg", 35, "countable"),
+    (f"{_AGAR}/higher-resolution/bright/734.jpg", 54, "bright background"),
+    (f"{_AGAR}/higher-resolution/bright/525.jpg", 83, "medium density"),
+    (f"{_AGAR}/higher-resolution/bright/971.jpg", 130, "undercounted (~94 found)"),
+    (f"{_AGAR}/higher-resolution/bright/518.jpg", 298, "dense: fails, goes to Review"),
+]
+
+
 @app.get("/api/examples", summary="List example plates", tags=["analysis"])
 def api_examples():
-    cands = [
-        "data/agar_demo/AGAR_representative/lower-resolution/14684.jpg",
-        "data/agar_demo/AGAR_representative/higher-resolution/bright/518.jpg",
-        "data/agar_demo/AGAR_representative/lower-resolution/356.jpg",
-        "data/agar_demo/AGAR_representative/lower-resolution/5206.jpg",
+    """Local AGAR example plates (only those downloaded into data/), with the annotated true count."""
+    return [
+        {"path": path, "name": Path(path).name, "true_count": true, "note": note}
+        for path, true, note in EXAMPLES
+        if Path(path).exists()
     ]
-    out = []
-    for p in cands:
-        if Path(p).exists():
-            out.append({"path": p, "name": Path(p).name})
-            if len(out) >= 3:
-                break
-    return out
 
 
 @app.get("/api/queue", summary="List runs for review-by-exception queue", tags=["queue"])
