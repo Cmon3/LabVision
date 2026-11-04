@@ -24,7 +24,8 @@ function showState(which){
   // How it was verified always visible per mock
   if(liveProgress) liveProgress.hidden = false;
   errorState.hidden = which!=="error";
-  resultState.hidden = which!=="result";
+  // keep the plate preview visible while it is being analysed (or if the analysis failed)
+  resultState.hidden = !(which==="result" || (lastResult && lastResult.preview));
 }
 function setLeftStatus(t){ leftStatus.textContent = t||""; }
 function setError(err, hint){ errorMsg.textContent = err||"Error"; errorHint.textContent = hint||""; showState("error"); }
@@ -41,10 +42,30 @@ function pillClass(status){
 }
 function isTNTC(status, count){ return (status||"").toLowerCase()==="tntc" || count>300; }
 
+// Big view of a plate that has not been analysed yet: image only, no boxes, no numbers,
+// and nothing left over from the previous result.
+function showPreview(url, name){
+  lastResult = {preview:true, boxes:[], image_w:0, image_h:0};
+  masksEl = null;
+  imageEl = new Image();
+  imageEl.onload = ()=>{ lastResult.image_w=imageEl.naturalWidth; lastResult.image_h=imageEl.naturalHeight; drawViewer(); };
+  imageEl.src = url;
+  countBig.textContent = ""; countBig.hidden = true;
+  const sub=document.getElementById("requestSubtitle"); if(sub) sub.textContent = "Not analysed yet";
+  countSub.textContent = (name||"Plate") + " · press Run analysis";
+  statusPill.hidden = true;
+  const ab=document.getElementById("approveBtn"); if(ab) ab.hidden = true;
+  const det=document.getElementById("resultDetails"); if(det) det.hidden = true;
+  const tb=document.querySelector(".viewer-toolbar-top"); if(tb) tb.hidden = true;
+  const cap=document.getElementById("viewerCaption"); if(cap) cap.textContent = "Preview — colonies are outlined after the analysis.";
+  showState("result");
+}
+
 function setFile(blob, name){
   selectedFile = blob;
   selectedFile._name = name || "image.jpg";
   const url = URL.createObjectURL(blob);
+  showPreview(url, name);
   previewThumb.src = url;
   previewThumb.hidden = false;
   dropzone.querySelector(".dz-text").textContent = name || "Image selected";
@@ -75,11 +96,27 @@ dropzone.addEventListener("dragover", e=>{ e.preventDefault(); dropzone.classLis
 dropzone.addEventListener("dragleave", ()=> dropzone.classList.remove("dragover"));
 dropzone.addEventListener("drop", e=>{
   e.preventDefault(); dropzone.classList.remove("dragover");
-  const f=e.dataTransfer.files[0]; if(f) setFile(f, f.name);
+  handleFiles([...e.dataTransfer.files]);
 });
 fileInput.addEventListener("change", ()=>{
-  const f=fileInput.files[0]; if(f) setFile(f, f.name);
+  const files=[...fileInput.files]; fileInput.value="";
+  handleFiles(files);
 });
+// one plate -> analyse here with the agent; several -> batch into the review queue
+async function handleFiles(files){
+  files=files.filter(f=> /^image\//.test(f.type) || /\.(jpe?g|png|tiff?)$/i.test(f.name));
+  if(!files.length) return;
+  if(files.length===1){ setFile(files[0], files[0].name); return; }
+  if(files.length>50){ setLeftStatus("Max 50 plates per batch — please split the selection."); return; }
+  const fd=new FormData(); files.forEach(f=> fd.append("images", f, f.name));
+  setLeftStatus(`Uploading ${files.length} plates to the review queue…`);
+  try{
+    const r=await fetch("/api/batch",{method:"POST",body:fd});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error((j.detail&&j.detail.hint)||("HTTP "+r.status));
+    location.href=`/app/queue?batch=${j.accepted.length}&skipped=${j.rejected.length}`;
+  }catch(e){ setLeftStatus("Batch upload failed: "+String(e.message||e).slice(0,200)); }
+}
 document.addEventListener("paste", e=>{
   const f=[...(e.clipboardData?.items||[])].find(i=>i.kind==="file");
   if(f){ const file=f.getAsFile(); if(file) setFile(file, file.name); }
@@ -354,6 +391,11 @@ const stopBtn=document.getElementById("stopBtn");
 if(stopBtn) stopBtn.addEventListener("click", ()=>{ if(currentAbort){ loadingText.textContent="Stopping…"; currentAbort.abort(); } });
 
 function renderResult(data){
+  statusPill.hidden = false;
+  { const det=document.getElementById("resultDetails"); if(det) det.hidden = false;
+    const tb=document.querySelector(".viewer-toolbar-top"); if(tb) tb.hidden = false;
+    countBig.hidden = false;
+    const cap=document.getElementById("viewerCaption"); if(cap) cap.textContent = "Masks teal, human edits amber. Click or drag to correct."; }
   const isT=isTNTC(data.status, data.count);
   countBig.textContent = data.count_label || (isT ? "TNTC >300" : data.count+" CFU");
   countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h} · ${data.duration_ms||""} ms` + (data.experimental?" · experimental — not benchmarked":"") : (data.experimental?"experimental — not benchmarked":"");

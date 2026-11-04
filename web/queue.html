@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/web/app.css?v=6">
-<script src="/web/theme.js?v=6"></script>
+<link rel="stylesheet" href="/web/app.css?v=10">
+<script src="/web/theme.js?v=10"></script>
 <style>
 .topbar{background:var(--surface);border-bottom:1px solid var(--line)}
 .topbar-inner{max-width:1360px;margin:0 auto;padding:14px 28px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
@@ -29,6 +29,7 @@
 .queue-table th{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-2);font-weight:600}
 .queue-table td{padding:14px 16px}
 .queue-table tr.flagged{background:var(--row-flag-bg)}
+[data-filter].is-active{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -72,7 +73,7 @@
   </div>
 
   <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Filter">
-    <button type="button" data-filter="needs" class="btn pill is-active" style="background:var(--ink);color:var(--bg);border-radius:999px">Needs review · <span id="countNeeds">0</span></button>
+    <button type="button" data-filter="needs" class="btn pill is-active" style="border-radius:999px">Needs review · <span id="countNeeds">0</span></button>
     <button type="button" data-filter="all" class="btn pill" style="border-radius:999px">All · <span id="countAll">0</span></button>
     <button type="button" data-filter="approved" class="btn pill" style="border-radius:999px">Approved · <span id="countApproved">0</span></button>
   </div>
@@ -96,6 +97,12 @@ if(exportBtn) exportBtn.addEventListener("click", ()=> window.location.href="/ap
 // batch upload -> same fixed pipeline as the camera inbox; plates show up in the table as they finish
 const uploadBtn=document.getElementById("uploadBtn"), uploadInput=document.getElementById("uploadInput"), batchStatus=document.getElementById("batchStatus");
 if(uploadBtn) uploadBtn.addEventListener("click", ()=> uploadInput.click());
+// arrived from /app with a batch
+{ const qp=new URLSearchParams(location.search); const n=qp.get("batch");
+  if(n && batchStatus){ batchStatus.hidden=false;
+    batchStatus.textContent=`${n} plate${n==="1"?"":"s"} queued from the Analyse page — each appears below when its analysis finishes.`+(Number(qp.get("skipped"))?` Skipped ${qp.get("skipped")} (not a JPG/PNG/TIFF).`:"");
+    setTimeout(()=>{ const allBtn=document.querySelector('[data-filter="all"]'); if(allBtn) allBtn.click(); }, 0);
+    history.replaceState(null, "", "/app/queue"); } }
 if(uploadInput) uploadInput.addEventListener("change", async ()=>{
   const files=[...uploadInput.files]; uploadInput.value="";
   if(!files.length) return;
