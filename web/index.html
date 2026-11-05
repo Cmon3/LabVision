@@ -7,9 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/web/app.css?v=13">
-<script src="/web/theme.js?v=13"></script>
-<script src="/web/batch.js?v=13"></script>
+<link rel="stylesheet" href="/web/app.css?v=14">
+<script src="/web/theme.js?v=14"></script>
+<script src="/web/batch.js?v=14"></script>
 <style>
 /* App layout — Session 10 mock */
 .app-main{max-width:1360px;margin:0 auto;padding:24px 28px;display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
@@ -120,10 +120,10 @@
       <label for="requestInput" class="card-kicker">2 · Request</label>
       <div style="display:flex;gap:10px;align-items:stretch">
         <input id="requestInput" type="text" value="count colonies" placeholder="count colonies larger than 2 mm" style="flex:1;min-width:0;font:400 16px 'Source Sans 3',sans-serif;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
-        <button id="micBtn" class="mic-btn" type="button" aria-label="Speak the request"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button id="micBtn" class="mic-btn" type="button" aria-label="Speak the request: click to start, click again to stop" title="Click to start, click again to stop — or hold while you speak"><svg id="micIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><svg id="stopIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
       </div>
+      <div id="micStatus" class="mic-status" aria-live="polite" style="font-size:13px;color:var(--muted-2);min-height:1em">Mic: click, speak, click again to stop (or hold while speaking).</div>
       <div id="suggestedChips" class="chip-row"></div>
-      <div id="micStatus" class="mic-status" aria-live="polite" style="font-size:13px;color:var(--muted-2);min-height:1em"></div>
       <button id="runBtn" class="run-btn" type="button">Run analysis</button>
       <div id="leftStatus" class="left-status" aria-live="polite" style="font-size:.85rem;min-height:1.2em"></div>
       <textarea id="requestInput_hidden" hidden></textarea>
@@ -290,6 +290,6 @@ document.getElementById('modeAdd')?.addEventListener('click', ()=>{
   document.getElementById('modeAdd').dispatchEvent(new Event('click',{bubbles:true})); // let app.js handle
 });
 </script>
-<script src="/web/app.js?v=13"></script>
+<script src="/web/app.js?v=14"></script>
 </body>
 </html>

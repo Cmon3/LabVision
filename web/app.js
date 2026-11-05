@@ -781,15 +781,42 @@ async function startRec(){
     };
     src.connect(proc); proc.connect(ac.destination);
     recState={ac, stream, proc, src, chunks, sampleRate:ac.sampleRate};
-    micBtn.classList.add("is-recording"); micStatus.textContent="Recording… click again to stop";
+    setRecordingUI(true);
   }catch(e){ micStatus.textContent="Mic error: "+e.message; }
+}
+const MAX_REC_S=20;
+let recTimer=null, recStartedAt=0;
+function setRecordingUI(on){
+  micBtn.classList.toggle("is-recording", on);
+  micStatus.classList.toggle("is-recording", on);
+  const mi=document.getElementById("micIcon"), si=document.getElementById("stopIcon");
+  if(mi) mi.hidden=on; if(si) si.hidden=!on;
+  micBtn.setAttribute("aria-label", on ? "Stop recording and transcribe" : "Speak the request: click to start, click again to stop");
+  clearInterval(recTimer);
+  if(on){
+    recStartedAt=Date.now();
+    const tick=()=>{
+      const s=Math.floor((Date.now()-recStartedAt)/1000);
+      micStatus.textContent=`● Recording 0:${String(s).padStart(2,"0")} — click the mic to stop (or release it)`;
+      if(s>=MAX_REC_S) stopRec();
+    };
+    tick(); recTimer=setInterval(tick, 250);
+  }
+}
+// words a speech model may write instead of digits before a unit ("two mm" -> "2 mm")
+const NUM_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,half:0.5,
+  uno:1,un:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10};
+function normalizeNumbers(t){
+  return t.replace(/\b([a-záéíóú]+)(\s*(?:mm|millimet(?:er|re)s?|milímetros?|milimetros?))\b/gi,
+    (m,w,unit)=> (w.toLowerCase() in NUM_WORDS) ? NUM_WORDS[w.toLowerCase()]+" mm" : m);
 }
 async function stopRec(){
   if(!recState) return;
   const {ac, stream, proc, src, chunks, sampleRate}=recState;
   try{ src.disconnect(); proc.disconnect(); }catch(_){}
   stream.getTracks().forEach(t=>t.stop());
-  micBtn.classList.remove("is-recording");
+  setRecordingUI(false);
+  micBtn.classList.add("is-busy"); micBtn.disabled=true;
   micStatus.textContent="Transcribing…";
   let total=0; for(const c of chunks) total+=c.length;
   const all=new Float32Array(total); let o=0; for(const c of chunks){ all.set(c,o); o+=c.length; }
@@ -801,12 +828,25 @@ async function stopRec(){
     const r=await fetch("/api/transcribe", {method:"POST", body:fd});
     if(!r.ok){ let j={}; try{ j=await r.json(); }catch(_){} throw new Error((j.detail&&j.detail.error)||j.error||"transcribe failed"); }
     const j=await r.json();
-    if(j.transcript){ requestInput.value=j.transcript; micStatus.textContent="Done — edit if needed, then Run"; }
-    else micStatus.textContent="No transcript";
+    if(j.transcript){ requestInput.value=normalizeNumbers(j.transcript); micStatus.textContent="Done — check the text, then press Run analysis"; }
+    else micStatus.textContent="Nothing heard — click the mic and try again";
   }catch(e){ micStatus.textContent="Transcribe error: "+e.message.slice(0,120); }
+  finally{ micBtn.classList.remove("is-busy"); micBtn.disabled=false; }
 }
-micBtn.addEventListener("click", ()=>{
-  if(recState) stopRec(); else startRec();
+// Click = toggle (start / stop). Hold = push-to-talk: a press longer than 400 ms stops on release.
+let micDownAt=0, micStartedOnDown=false;
+micBtn.addEventListener("pointerdown", e=>{
+  if(micBtn.disabled) return;
+  micDownAt=Date.now(); micStartedOnDown=false;
+  if(!recState){ micStartedOnDown=true; startRec(); }
 });
+micBtn.addEventListener("pointerup", ()=>{
+  const held=Date.now()-micDownAt;
+  if(micStartedOnDown){ if(held>400 && recState) stopRec(); }  // hold-to-talk released
+  else if(recState) stopRec();                                  // second click stops
+  micStartedOnDown=false;
+});
+micBtn.addEventListener("keydown", e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); recState?stopRec():startRec(); }});
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && recState) stopRec(); });
 
 requestInput.addEventListener("keydown", e=>{ if(e.key==="Enter" && (e.metaKey||e.ctrlKey)){ doAnalyze(); }});

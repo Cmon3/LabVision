@@ -112,10 +112,12 @@ a{color:var(--teal)}
 .request-row{display:flex; gap:8px}
 .request-row textarea{flex:1; font:400 .95rem "Source Sans 3",sans-serif; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); resize:vertical}
 .mic{width:48px; height:48px; border-radius:50%; border:1px solid var(--line); background:var(--surface); font-size:1.2rem; cursor:pointer; flex-shrink:0}
-.mic.is-recording{background:var(--fail); color:#fff; border-color:var(--fail); animation:pulse 1.2s infinite}
+.mic.is-recording, .mic-btn.is-recording{background:var(--fail); color:#fff; border-color:var(--fail); animation:pulse 1.2s infinite}
+.mic-btn.is-busy{opacity:.6; cursor:progress}
+.mic-status.is-recording{color:var(--fail); font-weight:600}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
 .mic-status{font-size:.82rem; color:var(--muted); min-height:1em}
-@media(prefers-reduced-motion:reduce){ .mic.is-recording{animation:none} .spinner{animation:none} }
+@media(prefers-reduced-motion:reduce){ .mic.is-recording, .mic-btn.is-recording{animation:none} .spinner{animation:none} }
 
 /* camera */
 #cameraWrap{border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#000}
