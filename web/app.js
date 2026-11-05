@@ -220,7 +220,8 @@ async function loadExamples(){
     }
     // ?example=14684 preload (from landing)
     const qp=new URLSearchParams(location.search).get("example");
-    let preselect=list[0];
+    // opened from the queue (?run_id=): show that stored run, never preload an example over it
+    let preselect=new URLSearchParams(location.search).get("run_id") ? null : list[0];
     if(qp){
       const found=list.find(e=> e.name.includes(qp) || e.path.includes(qp));
       if(found) preselect=found;
@@ -260,7 +261,11 @@ loadExamples();
     lastResult=data;
     renderResult(data);
     showState("result");
-    setLeftStatus(`Loaded ${data.plate_id||rid} from queue — you can correct by click/box`);
+    const pn=document.getElementById("plateName"), pm=document.getElementById("plateMeta"), th=document.getElementById("plateThumb");
+    if(pn) pn.textContent = data.plate_id || rid;
+    if(pm) pm.textContent = data.image_w ? `${data.image_w} × ${data.image_h} · from the review queue` : "from the review queue";
+    if(th && data.image_url) th.innerHTML = "", th.appendChild(Object.assign(document.createElement("img"), {src:data.image_url, alt:"", style:"width:100%;height:100%;object-fit:cover;border-radius:10px"}));
+    setLeftStatus(`Loaded ${data.plate_id||rid} from the queue — you can correct by click or box, then Approve`);
   }catch(e){ /* keep empty state */ }
 })();
 
@@ -407,7 +412,7 @@ function renderResult(data){
     const cap=document.getElementById("viewerCaption"); if(cap) cap.textContent = "Masks teal, human edits amber. Click or drag to correct."; }
   const isT=isTNTC(data.status, data.count);
   countBig.textContent = data.count_label || (isT ? "TNTC >300" : data.count+" CFU");
-  countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h} · ${data.duration_ms||""} ms` + (data.experimental?" · experimental — not benchmarked":"") : (data.experimental?"experimental — not benchmarked":"");
+  countSub.textContent = (data.image_w&&data.image_h)? `${data.image_w}×${data.image_h}` + (data.duration_ms?` · ${data.duration_ms} ms`:"") + (data.experimental?" · experimental — not benchmarked":"") : (data.experimental?"experimental — not benchmarked":"");
   const _rng=[]; if(data.min_diameter_mm!=null) _rng.push(`≥ ${data.min_diameter_mm} mm`); if(data.max_diameter_mm!=null) _rng.push(`< ${data.max_diameter_mm} mm`);
   if(_rng.length && data.detected>data.count){
     countSub.textContent = `${data.count} of ${data.detected} detected are ${_rng.join(" and ")} (excluded ones: dashed boxes) · ` + countSub.textContent;

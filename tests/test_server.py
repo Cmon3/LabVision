@@ -223,3 +223,27 @@ def test_correction_keeps_size_filter_exclusions(tmp_path, monkeypatch):
                 r = client.post("/api/correct", json={"run_id": run_id, "x": 85, "y": 85, "mode": "add"})
         assert r.status_code == 200, r.text
         assert r.json()["count"] == 2  # colony 1 + the added one; the excluded colony is not counted
+
+
+def test_run_detail_keeps_review_flag(tmp_path, monkeypatch):
+    """Opening a stored run (from the queue) must not show a flagged plate as OK."""
+    monkeypatch.setenv("LABVISION_RUNS_DIR", str(tmp_path/"runs"))
+    import server as srv; monkeypatch.setattr(srv, "RUNS_DIR", tmp_path/"runs")
+    with patch("server.segment", side_effect=_fake_segment), \
+         patch("labvision.segment.Segmentation.decoded_masks", _fake_masks), \
+         patch("labvision.plate.detect_plate_diameter_px", return_value=None):
+        run_id = client.post("/api/analyze", files={"image": ("t.png", _fake_image_bytes(), "image/png")}, data={"request": "count"}).json()["run_id"]
+    rp = tmp_path/"runs"/run_id/"run.json"
+    rec = json.loads(rp.read_text())
+    rec.setdefault("params", {}).update({"possible_undercount": True, "is_blurry": False, "glare": False})
+    rp.write_text(json.dumps(rec))
+    tp = tmp_path/"runs"/run_id/"trace.json"  # the fake image is blurry; make QC pass so Review is the only flag
+    if tp.exists():
+        tr = json.loads(tp.read_text())
+        for t in tr:
+            if t.get("name") == "check_quality":
+                t.update({"is_blurry": False, "glare": False})
+        tp.write_text(json.dumps(tr))
+    d = client.get(f"/api/runs/{run_id}").json()
+    assert d["status"] == "Review"
+    assert "possible undercount (dense plate)" in d["review_reasons"]

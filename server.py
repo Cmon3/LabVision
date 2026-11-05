@@ -1256,6 +1256,15 @@ def api_run_detail(run_id: str):
             status = "Empty"
         else:
             status = "OK"
+        # rule-based review flags stored with the run (same as the queue): never show those as OK
+        _pr = rec.get("params", {})
+        review_reasons = []
+        if _pr.get("possible_undercount"):
+            review_reasons.append("possible undercount (dense plate)")
+        if _pr.get("implausible_size_count"):
+            review_reasons.append(f"{_pr['implausible_size_count']} colonies with implausible size")
+        if status == "OK" and review_reasons:
+            status = "Review"
         count_label = _count_label(count)
         measurements = _measurements(rec.get("results", []))
         return {
@@ -1276,6 +1285,7 @@ def api_run_detail(run_id: str):
             "count": count,
             "count_label": count_label,
             "status": status,
+            "review_reasons": review_reasons,
             "measurements": measurements,
             "colony_types": [],
             "report": f"Plate {inbox.get('plate_id') or run_id} — {count_label} (loaded from queue)",
