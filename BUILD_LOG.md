@@ -109,3 +109,12 @@ Summary (Nov 3 Session 8, inbox → queue → LIMS):
 - Numbers: 82 pytest passed (LABVISION_RUNS_DIR tmp_path, runs_test_leftovers ignored); AGAR 11.8% 7/20 exact, BBBC w1 5.48 w2 18.95.
 - Cost: 0 new SAM (cache with _conf suffix, ~$0.6 bench), total well under $60+$20 caps.
 - Next: submit by Nov 4 17:00 Barcelona, X post, archive video.
+
+| Date | What | Result |
+|---|---|---|
+| 2026-11-04 | Pre-submission review | Correction: AGAR test is **6/20 exact** (not 7/20 as logged on Nov 3; recomputed from `bench/results_agar.csv`). Fixed SAM mask-confidence parse crash (`MASK_RE` 4th group). Logo → home, GitHub links fixed. |
+| 2026-11-05 | Honesty fixes in the live trace | One plan row per Muse turn; report step marked rule (Python template + Muse note); filter line only when applied; paused runs show no unverified count; Stop cancels the agent. |
+| 2026-11-05 | Size filters + flags | `max_diameter_mm` (“smaller than”); excluded colonies drawn dashed; dense/implausible → `Review` in `/app` (was OK); verifier “too few” rule matched its own feedback (was unsatisfiable). |
+| 2026-11-05 | UI | Dark-mode fixes + System/Light/Dark toggle; plate preview before analysis; working Approve in `/app`; no default reviewer name; 8 example plates with true counts. |
+| 2026-11-05 | Batch | `POST /api/batch` + folder upload (browser chunks of 50), single background worker, `GET /api/batch/status`; export CSV gains `reasons`. |
+| 2026-11-05 | Benchmark | `bench/run_agar_all.py`: all 39 annotated AGAR plates — test 11.8% / 6/20 exact / 13/20 within one colony (headline unchanged); dev 6.5%; all 9.2%. 105 tests. |

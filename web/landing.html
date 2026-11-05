@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/web/app.css?v=11">
-<script src="/web/theme.js?v=11"></script>
+<link rel="stylesheet" href="/web/app.css?v=13">
+<script src="/web/theme.js?v=13"></script>
 <style>
 .landing-wrap{max-width:1240px;margin:0 auto;padding:0 32px}
 .landing-hero{max-width:1240px;margin:0 auto;padding:56px 32px 88px;display:flex;flex-wrap:wrap;gap:56px;align-items:center}
@@ -37,8 +37,8 @@
 .results-inner{max-width:1240px;margin:0 auto;padding:88px 32px;display:flex;flex-wrap:wrap;gap:56px;align-items:center}
 .results-left{flex:1 1 360px;min-width:0;display:flex;flex-direction:column;gap:16px}
 .results-right{flex:1 1 440px;min-width:0;display:flex;flex-direction:column;gap:20px}
-.bars{display:flex;gap:40px;flex-wrap:wrap}
-.bar-stat{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:56px}
+.bars{display:flex;gap:28px;flex-wrap:wrap}
+.bar-stat{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:46px}
 .bar-label{color:var(--muted-2);font-size:16px}
 .bar-compare{display:flex;flex-direction:column;gap:8px}
 .bar-row{display:flex;align-items:center;gap:12px}
@@ -106,7 +106,7 @@
 <section id="how" class="section">
   <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:44px">How it works</h2>
   <div class="cards3">
-    <div class="card"><span class="card-kicker">01 · Ask</span><h3>Photo and a question</h3><p>Upload, use a fixed camera, or drop photos in an inbox. Type or say “count colonies larger than 2 mm”.</p></div>
+    <div class="card"><span class="card-kicker">01 · Ask</span><h3>Photo and a question</h3><p>Upload one plate, a whole folder, use a fixed camera, or drop photos in an inbox. Type or say “count colonies larger than 2 mm”.</p></div>
     <div class="card"><span class="card-kicker">02 · Agent works</span><h3>Plan, find, measure, verify</h3><p>Muse Spark Open plans. SAM 3.1 finds the colonies. Python measures. The report is refused if any number disagrees.</p></div>
     <div class="card"><span class="card-kicker">03 · You decide</span><h3>Review by exception</h3><p>Only flagged plates need you. Draw a box to fix a missed colony, approve, export to CSV for your LIMS.</p></div>
   </div>
@@ -116,13 +116,14 @@
   <div class="results-inner">
     <div class="results-left">
       <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:44px">Measured on plates it never saw</h2>
-      <p style="margin:0;color:var(--muted)">20 held-out AGAR plates, counted by microbiologists. Settings were tuned on a separate half.</p>
-      <div class="bars"><div><div class="bar-stat">11.8%</div><div class="bar-label">average error per plate</div></div><div><div class="bar-stat">6 / 20</div><div class="bar-label">plates exactly right</div></div></div>
+      <p style="margin:0;color:var(--muted)">20 held-out plates from the public AGAR dataset, hand-annotated. Settings were tuned on the other half.</p>
+      <div class="bars"><div><div class="bar-stat">11.8%</div><div class="bar-label">average error per plate</div></div><div><div class="bar-stat">13 / 20</div><div class="bar-label">exact or off by one colony</div></div><div><div class="bar-stat">6 / 20</div><div class="bar-label">plates exactly right</div></div></div>
+      <p style="margin:0;color:var(--muted);font-size:15px">The misses are dense plates of small colonies (one plate: 298 true, 31 found). The app flags those for review instead of reporting them OK.</p>
     </div>
     <div class="results-right">
-      <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--muted-2)">Same model, same photos. Only the words changed.</p>
-      <div class="bar-compare"><span style="font-family:'JetBrains Mono',monospace;font-size:15px">“bacterial colony”</span><div class="bar-row"><div class="bar-track" style="background:var(--line)"><div class="bar-fill" style="width:92%;background:var(--fail)"></div></div><span style="font-family:'JetBrains Mono',monospace;font-weight:600">99%</span></div></div>
-      <div class="bar-compare"><span style="font-family:'JetBrains Mono',monospace;font-size:15px">“round spot”</span><div class="bar-row"><div class="bar-track" style="background:var(--line)"><div class="bar-fill" style="width:11%;background:var(--ok)"></div></div><span style="font-family:'JetBrains Mono',monospace;font-weight:600">11.8%</span></div></div>
+      <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--muted-2)">Same model, same 19 tuning plates. Only the words changed. (Average error per plate.)</p>
+      <div class="bar-compare"><span style="font-family:'JetBrains Mono',monospace;font-size:15px">“bacterial colony”</span><div class="bar-row"><div class="bar-track" style="background:var(--line)"><div class="bar-fill" style="width:100%;background:var(--fail)"></div></div><span style="font-family:'JetBrains Mono',monospace;font-weight:600">99.6%</span></div></div>
+      <div class="bar-compare"><span style="font-family:'JetBrains Mono',monospace;font-size:15px">“round spot”</span><div class="bar-row"><div class="bar-track" style="background:var(--line)"><div class="bar-fill" style="width:6.5%;background:var(--ok)"></div></div><span style="font-family:'JetBrains Mono',monospace;font-weight:600">6.5%</span></div></div>
     </div>
   </div>
 </section>
@@ -131,18 +132,18 @@
 <section class="section" style="padding-top:48px">
   <h2 style="font-family:'Bricolage Grotesque',sans-serif;font-size:36px;margin:0">Where it fits — a module, not a monolith</h2>
   <div class="cards3">
-    <div class="card"><h3>Automated lab</h3><p class="muted">Incubator/imager → <code>POST /api/analyze</code> → <code>{count, masks, run_id}</code> + <code>GET /api/runs/{id}</code> audit. Device software calls the API.</p></div>
-    <div class="card"><h3>Small lab</h3><p class="muted">Phone on a stand saves to <code>./inbox</code> (QR plate ID, optional <code>{location, alert_limit}</code>). Review flagged plates in <a href="/app/queue">the queue</a> → Approve → <code>GET /api/export.csv</code> for LIMS.</p></div>
+    <div class="card"><h3>Automated lab</h3><p class="muted">Incubator/imager → <code>POST /api/analyze</code> → <code>{count, masks, run_id}</code> + <code>GET /api/runs/{id}</code> audit. Device software calls the API; <code>POST /api/batch</code> for many plates.</p></div>
+    <div class="card"><h3>Small lab</h3><p class="muted">Phone on a stand saves to <code>./inbox</code> (QR plate ID, optional <code>{location, alert_limit}</code>). Review flagged plates in <a href="/app/queue">the queue</a> → Approve → <code>GET /api/export.csv</code> for LIMS. No camera? Upload a folder of plates.</p></div>
   </div>
   <div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-family:'JetBrains Mono',monospace;font-size:.82rem;overflow:auto">
     <div>Automated: [Imager] ─POST /api/analyze─▶ [LabVision] ─count+masks+trace─▶ [LIMS]</div>
-    <div>Small lab: [Camera] ─▶ inbox/ ─poll 2s─▶ [LabVision] ─▶ queue (Re-photo/TNTC/Empty/alert/low conf) ─Approve─▶ export.csv</div>
+    <div>Small lab: [Camera] ─▶ inbox/ ─poll 2s─▶ [LabVision] ─▶ queue (Re-photo/TNTC/Empty/Review/alert/low conf) ─Approve─▶ export.csv</div>
   </div>
 </section>
 
 <section class="section">
   <h2 style="font-family:'Bricolage Grotesque',sans-serif;font-size:36px;margin:0">Queue — review by exception</h2>
-  <p>Only flagged plates need a human: blurry/glare → <span class="pill" style="background:var(--warn-soft);color:var(--warn-text)">Re-photo</span>, TNTC → <span class="pill" style="background:var(--warn-soft);color:var(--warn-text)">TNTC</span>, empty → <span class="pill" style="background:var(--line);color:var(--muted)">Empty</span>. Live queue at <a href="/app/queue">/app/queue</a> (auto-refresh 3 s).</p>
+  <p>Only flagged plates need a human: blurry/glare → <span class="pill" style="background:var(--warn-soft);color:var(--warn-text)">Re-photo</span>, TNTC → <span class="pill" style="background:var(--warn-soft);color:var(--warn-text)">TNTC</span>, empty → <span class="pill" style="background:var(--line);color:var(--muted)">Empty</span>, possible undercount or implausible sizes → <span class="pill" style="background:var(--warn-soft);color:var(--warn-text)">Review</span>. Live queue at <a href="/app/queue">/app/queue</a> (auto-refresh 3 s).</p>
   <img src="/web/img/queue.png" alt="Queue screenshot" style="max-width:100%;border:1px solid var(--line);border-radius:8px" onerror="this.style.display='none'">
 </section>
 
@@ -158,6 +159,7 @@
       <li>Name organisms. The model declined for safety reasons, and we kept that line.</li>
       <li>Flag mixed cultures. It did not beat a simple baseline, so a rule set in advance removed it.</li>
       <li>Count plates above 300 colonies. Those are reported as too numerous to count: dilute and re-plate.</li>
+      <li>Count very dense plates of tiny colonies reliably. It under-counts them, so they are flagged “possible undercount” for review, never reported OK.</li>
     </ul>
   </div>
 </section>

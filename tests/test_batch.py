@@ -49,3 +49,25 @@ def test_batch_limit(tmp_path, monkeypatch):
     files = [("images", (f"p{i}.png", b"x", "image/png")) for i in range(srv.BATCH_MAX_FILES + 1)]
     r = client.post("/api/batch", files=files)
     assert r.status_code == 413
+
+
+def test_batch_status_counts_pending_and_done(tmp_path, monkeypatch):
+    import server as srv
+
+    def fake_process_one(inbox_dir, image_path):
+        if "bad" in image_path.name:
+            raise RuntimeError("boom")
+        return {"run_id": "x"}
+
+    before = srv.api_batch_status()
+    with patch("labvision.inbox.process_one", side_effect=fake_process_one):
+        client = TestClient(srv.app)
+        files = [("images", ("ok1.png", _png(), "image/png")), ("images", ("bad.png", _png(), "image/png"))]
+        assert client.post("/api/batch", files=files).status_code == 200
+        for _ in range(100):
+            st = client.get("/api/batch/status").json()
+            if st["pending"] == before["pending"]:
+                break
+            time.sleep(0.05)
+    assert st["done"] == before["done"] + 1
+    assert st["failed"] == before["failed"] + 1

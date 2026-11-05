@@ -1,5 +1,18 @@
 # Security review — 2026-11-03 (read-only, no code changed)
 
+## Status — 2026-11-05 (re-checked in code; findings below kept as written on 11-03)
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | Path traversal via `run_id` | Fixed — `_validate_run_id` regex + resolved-path check (`server.py`), `labvision/queue.py` |
+| 2 | Unbounded uploads | Fixed — images 15 MB + Pillow format check (JPEG/PNG/TIFF), audio 5 MB; batch max 50 files per request |
+| 3–5 | `innerHTML` with server data | Fixed — rows and tables built with `textContent`; remaining `innerHTML` uses static strings only |
+| 6 | Weak `/api/examples/file` allowlist | Fixed 11-05 — only the resolved-path check under `data/` + image-suffix allowlist |
+| 7 | Raw exception text to clients | Fixed — generic errors; planner/SAM errors logged server-side only |
+| 8 | Unpinned / heavy deps | Partly — all pinned with `==`; `gradio`/`pandas` remain for the `app.py` fallback UI |
+| 9 | Google Fonts without SRI/CSP | Open — no CSP header yet |
+| 10–15 | Low / good practices | Unchanged (127.0.0.1 bind, no CORS, no secrets in git) |
+
 Scope: `server.py`, `labvision/inbox.py`, `labvision/queue.py`, `web/*`, `.gitignore`, `requirements.txt`, git history (masked). Did not open `.env`, `data/`, `runs/`, `inbox/`, `notes/`.
 
 ## High

@@ -129,16 +129,14 @@ if WEB_DIR.exists():
 
     @app.api_route("/api/examples/file", methods=["GET", "HEAD"])
     def _example_file(path: str):
-        # only serve files inside data/
-        p = Path(path)
-        if not p.exists():
-            p = Path(path.lstrip("/"))
-        if not p.exists() or "data" not in str(p.resolve()):
-            raise HTTPException(status_code=404, detail="not found")
+        # only serve image files inside data/ (resolved path must stay under data/)
+        p = Path(path.lstrip("/"))
         try:
             p.resolve().relative_to(Path("data").resolve())
         except Exception:
             raise HTTPException(status_code=403, detail="forbidden")
+        if p.suffix.lower() not in (".jpg", ".jpeg", ".png", ".tif", ".tiff") or not p.is_file():
+            raise HTTPException(status_code=404, detail="not found")
         mt = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
         return FileResponse(str(p), media_type=mt)
 
@@ -292,7 +290,8 @@ def _analyze_image(image_bytes: bytes, request: str, run_id: str | None = None) 
         if any(c in seg_prompt.lower() for c in ["black", "yellow", "white", "cream", "red", "brown", "green", "gold", "beige"]):
             experimental = True
     except Exception as e:
-        _trace("segment", "fail", error=str(e)[:200])
+        logger.warning("segment failed: %s", e)
+        _trace("segment", "fail", error="segmentation service unavailable")
         logger.exception("segment failed: %s", e)
         raise HTTPException(status_code=502, detail={"error": "SAM segmentation failed", "hint": "Check API keys in .env and try again."})
 
@@ -743,8 +742,51 @@ async def api_analyze(image: UploadFile = File(...), request: str = Form("")):
         return JSONResponse(status_code=500, content={"error": "internal error", "hint": "Check API keys in .env and try again."})
 
 
-BATCH_MAX_FILES = 50
+BATCH_MAX_FILES = 50  # per request; the browser splits a bigger folder into requests of 50
 _BATCH_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+# One background worker for all batch uploads: plates are analysed one at a time, in arrival
+# order, however many uploads arrive (no burst of parallel SAM calls).
+import queue as _queue_mod
+import threading as _threading_mod
+
+_batch_jobs: "_queue_mod.Queue[tuple[Path, str]]" = _queue_mod.Queue()
+_batch_state = {"pending": 0, "done": 0, "failed": 0}
+_batch_lock = _threading_mod.Lock()
+_batch_worker: "_threading_mod.Thread | None" = None
+
+
+def _batch_loop() -> None:
+    while True:
+        staging, name = _batch_jobs.get()
+        try:
+            from labvision import inbox as _inbox
+            _inbox.process_one(staging, staging / name)
+            ok = True
+        except Exception:
+            logger.exception("batch item failed: %s", name)
+            ok = False
+        with _batch_lock:
+            _batch_state["pending"] -= 1
+            _batch_state["done" if ok else "failed"] += 1
+        _batch_jobs.task_done()
+
+
+def _enqueue_batch(staging: Path, names: list[str]) -> None:
+    global _batch_worker
+    with _batch_lock:
+        _batch_state["pending"] += len(names)
+        if _batch_worker is None or not _batch_worker.is_alive():
+            _batch_worker = _threading_mod.Thread(target=_batch_loop, name="batch-worker", daemon=True)
+            _batch_worker.start()
+    for n in names:
+        _batch_jobs.put((staging, n))
+
+
+@app.get("/api/batch/status", summary="Batch progress: plates waiting / done / failed", tags=["queue"])
+def api_batch_status():
+    with _batch_lock:
+        return dict(_batch_state)
 
 
 @app.post("/api/batch", summary="Batch upload: analyse many plates into the review queue", tags=["queue"])
@@ -754,7 +796,6 @@ async def api_batch(images: list[UploadFile] = File(...)):
     `/app/queue` as it finishes. Plate ID = QR code if found, else the file name.
     Returns `{batch_id, accepted: [names], rejected: [{name, reason}]}` immediately."""
     import tempfile
-    import threading
 
     if len(images) > BATCH_MAX_FILES:
         raise HTTPException(status_code=413, detail={"error": "too many files", "hint": f"Max {BATCH_MAX_FILES} plates per batch"})
@@ -780,16 +821,8 @@ async def api_batch(images: list[UploadFile] = File(...)):
         seen.add(name)
         accepted.append(name)
 
-    def _work():
-        from labvision.inbox import process_one
-        for name in accepted:
-            try:
-                process_one(staging, staging / name)
-            except Exception:
-                logger.exception("batch item failed: %s", name)
-
     if accepted:
-        threading.Thread(target=_work, name=f"batch-{staging.name}", daemon=True).start()
+        _enqueue_batch(staging, accepted)
     return {"batch_id": staging.name, "accepted": accepted, "rejected": rejected}
 
 

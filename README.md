@@ -8,19 +8,23 @@ Plate photo + plain request → colony count you can audit.
 
 ## Built during the hackathon
 
-Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entry in the Meta Global AI Developer Hackathon (Indie track). See the dated [BUILD_LOG.md](BUILD_LOG.md) for what was built and when. How it was built: [docs/process/](docs/process/) — plan, per-session instruction files, and design mockups.
+Everything in this repository was built **Oct 27 – Nov 5 2026** (submission deadline Nov 4, 21:00 ET = Nov 5, 03:00 in Barcelona) as a solo entry in the Meta Global AI Developer Hackathon (Indie track). See the dated [BUILD_LOG.md](BUILD_LOG.md) for what was built and when. How it was built: [docs/process/](docs/process/) — plan, per-session instruction files, and design mockups.
 
 ## What it does
 
 - **Count colonies / cells** with SAM 3.1 from a short noun phrase (e.g. `round spot`).
 - **Measure in Python** — counts, areas, equivalent diameters come from `labvision/measure.py`; numbers never come from the model. Pixel size → mm via plate diameter detected in Python with OpenCV HoughCircles (90 mm plate, otherwise px with a note).
 - **Quality checks** — blur (Laplacian variance), glare (saturated pixels), empty, crowded.
+- **Size filters** — “larger than X mm” and “smaller than X mm” (or both) are applied in Python by the `measure` tool; colonies excluded by the filter are drawn dashed and the header says “N of M detected”. The report states which filter was applied — or that a requested one was not.
 - **TNTC** — counts >300 → “Too numerous to count (>300 CFU): dilute and re-plate”.
 - **Self-check retry** — if SAM returns 0 but the image is sharp, retry once with the alternate prompt `colonies`.
 - **Descriptive colony-type table** — Python features (Lab colour minus agar background, circularity, log diameter, texture) are clustered in Python (fixed global scales, average linkage); Muse Spark Open writes a short description per group from a constrained vocabulary (colours, shapes, margins, elevations, surfaces). The table is descriptive only.
 - **Voice input** — click the mic, say “count colonies larger than 2 mm” hands-free (gloves, biosafety cabinet); Muse Voice Transcribe fills the request box.
 - **Human in the loop** — draw a box around a missed colony (SAM box/point prompt) in the Result tab; accepted only if it contrasts with the surrounding agar (“No colony visible here” otherwise). Removing a false detection and every edit is logged separately from model output.
-- **Sanity guards** — duplicates (IoU), plate size check (40–98% of image), implausible sizes (0.1–15 mm flagged), dense-plate undercount flag.
+- **Sanity guards** — duplicates (IoU), plate size check (40–98% of image), implausible sizes (0.1–15 mm flagged), dense-plate undercount flag. A flagged plate gets status **Review**, never OK.
+- **Batch / folder upload** — pick many photos or a whole folder (in `/app` or the queue); non-images are ignored, the browser sends them in requests of 50, and one background worker analyses them in order. Progress shows in the queue (“N plates waiting”).
+- **Stop** — cancel a running analysis; the agent stops before its next model call.
+- **Light / dark / system theme** toggle on every page.
 - **Audit log + CSV** — every run writes `run.json` (inputs, model ids, params, including voice transcript and corrections) and `results.csv`.
 
 ## Where it fits — a module, not a monolith
@@ -28,7 +32,7 @@ Everything in this repository was built **Oct 27 – Nov 4 2026** as a solo entr
 ![Queue — review by exception](docs/img/queue.png)
 
 - **Labs with automated incubators/imagers**: the device's software sends each plate image to `POST /api/analyze` and receives `{count, masks, status, run_id}` + `GET /api/runs/{id}` (trace with `decided_by: rule` for inbox, `model` for streaming) and `GET /api/export.csv` for LIMS import. The agent runs as a service behind the API — no UI needed.
-- **Small labs without automation**: any camera (phone on a stand, USB camera) saves photos into `./inbox` (poll every 2 s, size unchanged for 2 s, temp+rename; QR code → plate ID else filename; optional sidecar `{location, sample_type, alert_limit}` — *example values only*). LabVision picks them up (`python server.py --inbox ./inbox` or `python -m labvision.inbox ./inbox`), runs the fixed pipeline (`count colonies`, `decided_by: rule`), and the technician only reviews flagged plates in the queue at `/app/queue`. No camera? **Upload plates** in the queue analyses a whole batch the same way.
+- **Small labs without automation**: any camera (phone on a stand, USB camera) saves photos into `./inbox` (poll every 2 s, size unchanged for 2 s, temp+rename; QR code → plate ID else filename; optional sidecar `{location, sample_type, alert_limit}` — *example values only*). LabVision picks them up (`python server.py --inbox ./inbox` or `python -m labvision.inbox ./inbox`), runs the fixed pipeline (`count colonies`, `decided_by: rule`), and the technician only reviews flagged plates in the queue at `/app/queue`. No camera? **Upload a folder** of plates (queue or `/app`) — same pipeline, analysed in the background.
 
 Diagram:
 
@@ -44,15 +48,16 @@ Review-by-exception: blurry/glare → **Re-photo** (amber), TNTC (>300) → **TN
 - `POST /api/analyze` — multipart `image` + `request` (e.g. `count colonies`) → `{run_id, count, count_label, status: OK|Re-photo|TNTC|Empty, image_url, masks_url, boxes, measurements, trace: [{name, status, decided_by, mean_confidence}], report, csv_url}`
 - `GET /api/runs/{id}` → same shape for a stored run (audit: `inputs.plate_id`, `inputs.location`, `params.plate_id`, `params.status`, `params.mean_confidence`)
 - `GET /api/export.csv?from=2026-11-01T00:00:00Z&to=2026-11-02T00:00:00Z` → `plate_id,location,time,count,status,reasons,reviewed_by,reviewed_at,run_id` (one row per run, for LIMS; alert limits are *example values only*)
-- `POST /api/batch` — multipart `images` (up to 50 JPG/PNG/TIFF) → `{batch_id, accepted, rejected}`; each plate runs the same fixed pipeline as the inbox (`count colonies`, `decided_by: rule`) in the background and appears in `/app/queue`. Same as the **Upload plates** button in the queue.
+- `POST /api/batch` — multipart `images` (up to 50 JPG/PNG/TIFF) → `{batch_id, accepted, rejected}`; each plate runs the same fixed pipeline as the inbox (`count colonies`, `decided_by: rule`) in the background and appears in `/app/queue`. Same as **Upload plates / Upload a folder** in the queue and “Batch → review queue” in `/app`; a bigger folder is sent as several requests of 50.
 - `POST /api/runs/{id}/approve` `{reviewer: "Name"}` → audit `approval.json` + `run.json:audit` with `decided_by: human`, `final_count`
+- `GET /api/batch/status` → `{pending, done, failed}` for batch uploads
 - OpenAPI docs at `/docs` — every endpoint has `summary` + example.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    User --> App[app.py — Gradio]
+    User --> App[web app — server.py FastAPI\n/app, /app/queue, REST API]
     App --> Agent[agent — Muse Spark Open\nopen weights via Baseten]
     Agent --> QC[check_quality\nlabvision/qc.py]
     Agent --> Seg[segment\nSAM 3.1 Meta Model API]
@@ -142,8 +147,9 @@ Keys are read from environment only and never logged. Every external call is cac
 1. `python server.py` → open `http://127.0.0.1:8000/` (landing) then **Try an example plate** → plate loads in `/app?example=14684`.
 2. Press **Run** → watch **How it was verified** tick live (✓/!/✕ + model/rule badges) and see the count, viewer, and report.
 3. Draw a box around a missed colony → count updates (SAM point/box prompt); remove a false detection the same way.
-4. Stop the server and restart it with `--inbox ./inbox`, then in a second terminal run the camera simulator `python scripts/simulate_camera.py --inbox ./inbox` → open `/app/queue`, set reviewer name, **Approve** a plate, **Export CSV** for LIMS.
-5. Try `is this plate countable?` or `count black colonies (experimental)` → check the countable verdict / experimental banner and that numbers still come from Python.
+4. **Upload a folder** (left panel, “Batch → review queue”) with several plates → you land in `/app/queue` and they appear as they finish.
+5. Stop the server and restart it with `--inbox ./inbox`, then in a second terminal run the camera simulator `python scripts/simulate_camera.py --inbox ./inbox` → open `/app/queue`, set reviewer name, **Approve** a plate, **Export CSV** for LIMS.
+6. Try `count colonies smaller than 5 mm`, `is this plate countable?` or `count black colonies (experimental)` → check the countable verdict / experimental banner and that numbers still come from Python.
 
 ## License
 

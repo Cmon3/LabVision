@@ -7,8 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/web/app.css?v=11">
-<script src="/web/theme.js?v=11"></script>
+<link rel="stylesheet" href="/web/app.css?v=13">
+<script src="/web/theme.js?v=13"></script>
+<script src="/web/batch.js?v=13"></script>
 <style>
 .topbar{background:var(--surface);border-bottom:1px solid var(--line)}
 .topbar-inner{max-width:1360px;margin:0 auto;padding:14px 28px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
@@ -58,8 +59,10 @@
         <input id="reviewerName" type="text" value="" placeholder="Your name" style="font:400 15px 'Source Sans 3',sans-serif;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);width:180px">
       </label>
       <button id="approveCleanBtn" class="btn" style="background:var(--ok);color:var(--on-ok);border-color:var(--ok)">Approve 5 clean plates</button>
-      <button id="uploadBtn" class="btn" type="button" title="Analyse many plates at once (JPG/PNG/TIFF, up to 50)">Upload plates</button>
+      <button id="uploadBtn" class="btn" type="button" title="Pick plate photos (JPG/PNG/TIFF). Analysed in the background.">Upload plates</button>
       <input id="uploadInput" type="file" accept="image/jpeg,image/png,image/tiff" multiple hidden>
+      <button id="folderBtn" class="btn" type="button" title="Pick a whole folder: every JPG/PNG/TIFF inside is analysed in the background.">Upload a folder</button>
+      <input id="folderInput" type="file" webkitdirectory multiple hidden>
       <button id="exportBtn" class="btn" title="One row per plate: plate_id, location, time, count, status, reasons, reviewed_by, reviewed_at, run_id">Export CSV</button>
     </div>
   </div>
@@ -94,33 +97,49 @@ const reviewerInput=document.getElementById("reviewerName");
 const approveCleanBtn=document.getElementById("approveCleanBtn");
 const exportBtn=document.getElementById("exportBtn");
 if(exportBtn) exportBtn.addEventListener("click", ()=> window.location.href="/api/export.csv");
-// batch upload -> same fixed pipeline as the camera inbox; plates show up in the table as they finish
+// batch upload (files or a whole folder) -> background analysis, one plate at a time -> rows appear here
 const uploadBtn=document.getElementById("uploadBtn"), uploadInput=document.getElementById("uploadInput"), batchStatus=document.getElementById("batchStatus");
+const folderBtn=document.getElementById("folderBtn"), folderInput=document.getElementById("folderInput");
 if(uploadBtn) uploadBtn.addEventListener("click", ()=> uploadInput.click());
+if(folderBtn) folderBtn.addEventListener("click", ()=> folderInput.click());
+let batchPoll=null;
+function showAll(){ const allBtn=document.querySelector('[data-filter="all"]'); if(allBtn) allBtn.click(); }
+function pollBatch(prefix){
+  clearInterval(batchPoll);
+  const tick=async ()=>{
+    try{
+      const st=await (await fetch("/api/batch/status")).json();
+      if(st.pending>0){ batchStatus.textContent=`${prefix} ${st.pending} plate${st.pending===1?"":"s"} waiting for analysis — you can leave this page, it continues in the background.`; }
+      else { batchStatus.textContent=`${prefix} All analysed.`+(st.failed?` ${st.failed} failed (see server log).`:""); clearInterval(batchPoll); fetchQueue(); }
+    }catch(_){}
+  };
+  tick(); batchPoll=setInterval(tick, 2000);
+}
+async function doBatch(fileList, fromFolder){
+  if(!fileList || !fileList.length) return;
+  uploadBtn.disabled=true; if(folderBtn) folderBtn.disabled=true; batchStatus.hidden=false;
+  try{
+    const res=await window.LabVisionBatch.uploadBatch(fileList, (sent,total)=>{ batchStatus.textContent=`Uploading ${sent} of ${total} plates…`; });
+    if(!res.accepted.length && !res.rejected.length){ batchStatus.textContent=fromFolder?"No JPG/PNG/TIFF images in that folder.":"No JPG/PNG/TIFF images selected."; return; }
+    let prefix=`${res.accepted.length} plate${res.accepted.length===1?"":"s"} queued.`;
+    if(res.rejected.length) prefix+=` Skipped ${res.rejected.length}: `+res.rejected.slice(0,5).map(x=>`${x.name} (${x.reason})`).join(", ")+(res.rejected.length>5?"…":"")+".";
+    if(res.ignored) prefix+=` Ignored ${res.ignored} non-image file${res.ignored===1?"":"s"}.`;
+    showAll(); pollBatch(prefix);
+  }catch(e){ batchStatus.textContent="Upload failed: "+String(e.message||e).slice(0,200); }
+  finally{ uploadBtn.disabled=false; if(folderBtn) folderBtn.disabled=false; }
+}
+if(uploadInput) uploadInput.addEventListener("change", ()=>{ const f=[...uploadInput.files]; uploadInput.value=""; doBatch(f, false); });
+if(folderInput) folderInput.addEventListener("change", ()=>{ const f=[...folderInput.files]; folderInput.value=""; doBatch(f, true); });
 // arrived from /app with a batch
 { const qp=new URLSearchParams(location.search); const n=qp.get("batch");
   if(n && batchStatus){ batchStatus.hidden=false;
-    batchStatus.textContent=`${n} plate${n==="1"?"":"s"} queued from the Analyse page — each appears below when its analysis finishes.`+(Number(qp.get("skipped"))?` Skipped ${qp.get("skipped")} (not a JPG/PNG/TIFF).`:"");
-    setTimeout(()=>{ const allBtn=document.querySelector('[data-filter="all"]'); if(allBtn) allBtn.click(); }, 0);
+    let prefix=`${n} plate${n==="1"?"":"s"} queued from the Analyse page.`;
+    if(Number(qp.get("skipped"))) prefix+=` Skipped ${qp.get("skipped")}.`;
+    if(Number(qp.get("ignored"))) prefix+=` Ignored ${qp.get("ignored")} non-image file${qp.get("ignored")==="1"?"":"s"}.`;
+    setTimeout(()=>{ showAll(); pollBatch(prefix); }, 0);
     history.replaceState(null, "", "/app/queue"); } }
-if(uploadInput) uploadInput.addEventListener("change", async ()=>{
-  const files=[...uploadInput.files]; uploadInput.value="";
-  if(!files.length) return;
-  if(files.length>50){ batchStatus.hidden=false; batchStatus.textContent="Max 50 plates per batch — please split the upload."; return; }
-  const fd=new FormData(); files.forEach(f=> fd.append("images", f, f.name));
-  uploadBtn.disabled=true; batchStatus.hidden=false; batchStatus.textContent=`Uploading ${files.length} plate${files.length>1?"s":""}…`;
-  try{
-    const r=await fetch("/api/batch",{method:"POST",body:fd});
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error((j.detail&&j.detail.hint)||("HTTP "+r.status));
-    let msg=`${j.accepted.length} plate${j.accepted.length===1?"":"s"} queued — each appears below when its analysis finishes.`;
-    if(j.rejected.length) msg+=` Skipped ${j.rejected.length}: `+j.rejected.map(x=>`${x.name} (${x.reason})`).join(", ");
-    batchStatus.textContent=msg;
-    // show everything so new clean plates are visible too
-    const allBtn=document.querySelector('[data-filter="all"]'); if(allBtn) allBtn.click();
-  }catch(e){ batchStatus.textContent="Upload failed: "+String(e.message||e).slice(0,200); }
-  finally{ uploadBtn.disabled=false; }
-});
+// a batch may still be running from before (page reloaded): show its progress
+fetch("/api/batch/status").then(r=>r.json()).then(st=>{ if(st.pending>0 && batchStatus.hidden){ batchStatus.hidden=false; pollBatch("Batch in progress."); } }).catch(()=>{});
 function pillClass(s){ const v=(s||"ok").toLowerCase(); if(v==="tntc") return "tntc"; if(v==="re-photo") return "rephoto"; if(v==="empty") return "empty"; if(v==="review") return "review"; if(v==="ok") return "ok"; if(v==="approved") return "approved"; return "ok"; }
 function updateApproveDisabled(){
   const hasName=!!reviewerInput.value.trim();

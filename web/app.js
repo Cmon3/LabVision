@@ -105,21 +105,25 @@ fileInput.addEventListener("change", ()=>{
 const batchBtn=document.getElementById("batchBtn"), batchInput=document.getElementById("batchInput");
 if(batchBtn && batchInput){
   batchBtn.addEventListener("click", ()=> batchInput.click());
-  batchInput.addEventListener("change", ()=>{ const files=[...batchInput.files]; batchInput.value=""; handleFiles(files, true); });
+  batchInput.addEventListener("change", ()=>{ const files=[...batchInput.files]; batchInput.value=""; if(files.length) sendBatch(files); });
+}
+const batchFolderBtn=document.getElementById("batchFolderBtn"), batchFolderInput=document.getElementById("batchFolderInput");
+if(batchFolderBtn && batchFolderInput){
+  batchFolderBtn.addEventListener("click", ()=> batchFolderInput.click());
+  batchFolderInput.addEventListener("change", ()=>{ const files=[...batchFolderInput.files]; batchFolderInput.value=""; if(files.length) sendBatch(files); });
 }
 // one plate -> analyse here with the agent; several (or the batch button) -> review queue
 async function handleFiles(files, forceBatch=false){
   files=files.filter(f=> /^image\//.test(f.type) || /\.(jpe?g|png|tiff?)$/i.test(f.name));
   if(!files.length) return;
   if(files.length===1 && !forceBatch){ setFile(files[0], files[0].name); return; }
-  if(files.length>50){ setLeftStatus("Max 50 plates per batch — please split the selection."); return; }
-  const fd=new FormData(); files.forEach(f=> fd.append("images", f, f.name));
-  setLeftStatus(`Uploading ${files.length} plates to the review queue…`);
+  await sendBatch(files);
+}
+async function sendBatch(fileList){
   try{
-    const r=await fetch("/api/batch",{method:"POST",body:fd});
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error((j.detail&&j.detail.hint)||("HTTP "+r.status));
-    location.href=`/app/queue?batch=${j.accepted.length}&skipped=${j.rejected.length}`;
+    const res=await window.LabVisionBatch.uploadBatch(fileList, (sent,total)=> setLeftStatus(`Uploading ${sent} of ${total} plates to the review queue…`));
+    if(!res.accepted.length && !res.rejected.length){ setLeftStatus("No JPG/PNG/TIFF images found."); return; }
+    location.href=`/app/queue?batch=${res.accepted.length}&skipped=${res.rejected.length}&ignored=${res.ignored}`;
   }catch(e){ setLeftStatus("Batch upload failed: "+String(e.message||e).slice(0,200)); }
 }
 document.addEventListener("paste", e=>{

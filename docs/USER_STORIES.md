@@ -4,7 +4,7 @@
 |---|-------|---------|------------|------|
 | 1 | technician | count colonies on a plate from a photo | a count is returned with round masks over each colony | `tests/test_server.py::test_analyze_ok` |
 | 2 | technician with gloves | ask by voice | what I say appears in the request box | manual (needs microphone) |
-| 3 | technician | filter by size (“larger than 2 mm”) | the count changes and sizes are in mm | `tests/test_measure.py::test_measure_mm_scale_and_filter_2mm` |
+| 3 | technician | filter by size (“larger than 2 mm”, “smaller than 3 mm”) | the count changes, sizes are in mm, excluded colonies are shown dashed | `tests/test_measure.py::test_measure_mm_scale_and_filter_2mm`, `tests/test_measure.py::test_filter_by_max_diameter_smaller_than`, `tests/test_agent.py::test_smaller_than_filter_applied_and_reported` |
 | 4 | technician | know if the photo is usable | a blurry photo gives “Re-photo” and no count | `tests/test_qc.py::test_blur_flag` |
 | 5 | technician | not get a false number on saturated plates | >300 colonies, or a dense plate with few detections, goes to review | manual (crowded flag covered by `tests/test_qc.py::test_crowded_flags`, dense undercount has no automated check) |
 | 6 | technician | fix a missed colony | drawing a box adds it, count +1 and `decided_by: human` | `tests/test_server.py::test_correct_add_remove` |
@@ -15,6 +15,7 @@
 | 11 | lab with fixed camera | not upload by hand | a photo dropped in `inbox/` appears in the queue within 10 s with plate_id from QR | `tests/test_inbox.py::test_process_success_and_move` |
 | 12 | auditor | see how each number was obtained | the timeline shows model/rule/human steps and a wrong-count report is refused | `tests/test_verification.py::test_verify_wrong_count_refused` |
 | 13 | integrator | connect another device | `/docs` documents the API and `/api/analyze` responds | manual (API docs have no automated check) |
+| 14 | technician without a camera | analyse a whole folder of plates at once | every JPG/PNG/TIFF in the folder is analysed in the background (one at a time) and appears in the queue; non-images are ignored | `tests/test_batch.py` (upload, limits, worker progress); folder picker itself manual |
 
 ## Verification (2026-11-04 via scripts/check_stories.py, real system no mocks)
 

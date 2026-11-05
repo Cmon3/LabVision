@@ -7,8 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/web/app.css?v=11">
-<script src="/web/theme.js?v=11"></script>
+<link rel="stylesheet" href="/web/app.css?v=13">
+<script src="/web/theme.js?v=13"></script>
+<script src="/web/batch.js?v=13"></script>
 <style>
 /* App layout — Session 10 mock */
 .app-main{max-width:1360px;margin:0 auto;padding:24px 28px;display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
@@ -35,7 +36,9 @@
 .chip-row{display:flex;flex-wrap:wrap;gap:6px}
 .chip-row .sug-chip{font:400 14px "Source Sans 3",sans-serif;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 .chip-row .sug-chip.experimental{border:1px dashed var(--accent);background:var(--surface);color:var(--accent-soft-text)}
-.batch-btn{width:100%;margin-top:10px;border-style:dashed}
+.batch-box{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.batch-label{font-size:13px;font-weight:600;color:var(--muted-2)}
+.batch-btn{border-style:dashed}
 .run-btn{font:600 17px "Source Sans 3",sans-serif;padding:14px;border-radius:10px;border:none;background:var(--ink);color:var(--bg)}
 .stop-btn{margin-left:auto;font:600 14px "Source Sans 3",sans-serif;padding:8px 14px;border-radius:8px;border:1.5px solid var(--fail);background:transparent;color:var(--fail);cursor:pointer}
 .stop-btn:hover{background:color-mix(in srgb, var(--fail) 12%, transparent)}
@@ -98,8 +101,15 @@
         <button id="cameraCaptureBtn" class="btn" type="button" hidden>Capture</button>
         <button id="cameraCancelBtn" class="btn" type="button" hidden>Cancel</button>
       </div>
-      <button id="batchBtn" class="btn batch-btn" type="button" title="Analyse many plates at once (up to 50). They go to the review queue.">Upload a batch → review queue</button>
+      <div class="batch-box">
+        <span class="batch-label">Batch → review queue <span class="muted">(analysed in the background)</span></span>
+        <div class="btn-row">
+          <button id="batchBtn" class="btn batch-btn" type="button" title="Pick several plate photos">Select files</button>
+          <button id="batchFolderBtn" class="btn batch-btn" type="button" title="Pick a folder: every JPG/PNG/TIFF inside is analysed">Select a folder</button>
+        </div>
+      </div>
       <input id="batchInput" type="file" accept="image/jpeg,image/png,image/tiff" multiple hidden>
+      <input id="batchFolderInput" type="file" webkitdirectory multiple hidden>
       <div id="cameraWrap" hidden><video id="cameraVideo" autoplay playsinline muted></video><canvas id="cameraCanvas" hidden></canvas></div>
       <div id="examples" class="examples" aria-label="examples"><span class="label">Examples</span><div id="exampleThumbs" class="thumbs"></div></div>
       <!-- keep original cameraBtn id for JS compatibility -->
@@ -280,6 +290,6 @@ document.getElementById('modeAdd')?.addEventListener('click', ()=>{
   document.getElementById('modeAdd').dispatchEvent(new Event('click',{bubbles:true})); // let app.js handle
 });
 </script>
-<script src="/web/app.js?v=11"></script>
+<script src="/web/app.js?v=13"></script>
 </body>
 </html>
