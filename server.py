@@ -633,6 +633,11 @@ async def api_analyze_stream(image: UploadFile = File(...), request: str = Form(
                                 png = _mp(masks[np.array(_keep, dtype=bool)], w2, h2)
                                 (rdir / "masks.png").write_bytes(png)
                         (rdir / "boxes.json").write_text(json.dumps(boxes_out))
+                        try:
+                            if len(masks) == len(boxes_out):
+                                np.save(rdir / "masks.npy", masks)  # real SAM masks, same order as boxes
+                        except Exception:
+                            pass
                         # Empty / TNTC describe the whole plate: with a size filter use all detections
                         _filtered = _min is not None or _max is not None
                         status2 = _sf(ver.get("qc", {}), detected if _filtered else _out.get("count", 0))
@@ -904,7 +909,19 @@ async def api_correct(payload: dict):
             for i, b in enumerate(boxes):
                 x1c, y1c, x2c, y2c = max(0, b["x1"]), max(0, b["y1"]), min(w, b["x2"]), min(h, b["y2"])
                 masks[i, y1c:y2c, x1c:x2c] = True
-        # if we had human tracking, need to adjust indices
+        # keep the removed detection (box + real mask) so a later add on the same spot restores it
+        try:
+            trash_p = rdir / "removed.json"
+            trash = json.loads(trash_p.read_text()) if trash_p.exists() else []
+            rm_mask = existing_masks[removed_idx] if existing_masks is not None and removed_idx < existing_masks.shape[0] else None
+            mask_name = None
+            if rm_mask is not None:
+                mask_name = f"removed_{len(trash)}.npy"
+                np.save(rdir / mask_name, rm_mask)
+            trash.append({"box": removed, "mask": mask_name})
+            trash_p.write_text(json.dumps(trash))
+        except Exception:
+            logger.exception("could not keep removed detection")
         action = {"action": "remove", "x": x, "y": y, "box": removed}
     elif mode == "manual":
         # manual: add box without SAM, labelled manual, not measured
@@ -944,6 +961,40 @@ async def api_correct(payload: dict):
         human_idx = {len(boxes) - 1}
         # for manual, we will not include its area in measurements; we handle that after
     else:
+        # add on a spot where the technician removed a detection earlier -> undo that removal:
+        # restore SAM's original box + mask, no new SAM call and no contrast check (it was a colony)
+        _cx = (x1 + x2) / 2 if x1 is not None and x2 is not None else x
+        _cy = (y1 + y2) / 2 if y1 is not None and y2 is not None else y
+        restored = None
+        try:
+            trash_p = rdir / "removed.json"
+            trash = json.loads(trash_p.read_text()) if trash_p.exists() else []
+            for k in range(len(trash) - 1, -1, -1):
+                tb = trash[k]["box"]
+                if _cx is not None and _cy is not None and tb["x1"] <= _cx <= tb["x2"] and tb["y1"] <= _cy <= tb["y2"]:
+                    restored = trash.pop(k)
+                    trash_p.write_text(json.dumps(trash))
+                    break
+        except Exception:
+            restored = None
+        if restored is not None:
+            rb = restored["box"]
+            rmask = None
+            if restored.get("mask") and (rdir / restored["mask"]).exists():
+                rmask = np.load(rdir / restored["mask"])
+            if rmask is None or rmask.shape != (h, w):
+                rmask = np.zeros((h, w), dtype=bool)
+                rmask[max(0, rb["y1"]):min(h, rb["y2"]), max(0, rb["x1"]):min(w, rb["x2"])] = True
+            boxes.append(rb)
+            if existing_masks is not None and existing_masks.shape[0] == len(boxes) - 1 and existing_masks.shape[1:] == (h, w):
+                masks = np.concatenate([existing_masks, rmask[None, ...]], axis=0)
+            else:
+                masks = np.zeros((len(boxes), h, w), dtype=bool)
+                for i, bb in enumerate(boxes[:-1]):
+                    masks[i, max(0, bb["y1"]):min(h, bb["y2"]), max(0, bb["x1"]):min(w, bb["x2"])] = True
+                masks[-1] = rmask
+            action = {"action": "restore", "box": rb, "note": "undo of an earlier remove: original SAM detection restored"}
+    if mode not in ("remove", "manual") and restored is None:
         # add: point or box
         data = img_path.read_bytes()
         try:
@@ -1069,7 +1120,16 @@ async def api_correct(payload: dict):
         else:
             rows = measure_mod.measure_masks(masks)
 
-    (rdir / "masks.png").write_bytes(_masks_png(masks, w, h, human_idx=human_idx))
+    # colonies excluded by the run's size filter stay excluded (not counted, no mask drawn)
+    _counted = [i for i, bb in enumerate(boxes) if not bb.get("filtered_out")]
+    if len(rows) == len(boxes) and len(_counted) != len(boxes):
+        rows = [rows[i] for i in _counted]
+    if len(masks) == len(boxes) and len(_counted) != len(boxes):
+        _draw = masks[np.array(_counted, dtype=int)] if _counted else np.zeros((0, h, w), dtype=bool)
+        _hidx = {_counted.index(i) for i in human_idx if i in _counted}
+    else:
+        _draw, _hidx = masks, human_idx
+    (rdir / "masks.png").write_bytes(_masks_png(_draw, w, h, human_idx=_hidx))
     csv_path = rdir / "results.csv"
     if rows:
         with csv_path.open("w", newline="") as f:

@@ -180,3 +180,46 @@ def test_correct_no_fabricated_mask(tmp_path, monkeypatch):
         assert r2.status_code == 200
         assert r2.json()["count"] == 3
         assert any("manual" in str(m).lower() for m in r2.json()["measurements"])
+
+
+def test_add_on_removed_spot_restores_original_detection(tmp_path, monkeypatch):
+    """Removing a SAM detection and adding on the same spot is an undo: the original box + mask
+    come back without a new SAM call and without the contrast guard (it was already a colony)."""
+    monkeypatch.setenv("LABVISION_RUNS_DIR", str(tmp_path/"runs"))
+    import server as srv; monkeypatch.setattr(srv, "RUNS_DIR", tmp_path/"runs")
+    with patch("server.segment", side_effect=_fake_segment), \
+         patch("labvision.segment.Segmentation.decoded_masks", _fake_masks), \
+         patch("labvision.plate.detect_plate_diameter_px", return_value=None):
+        run_id = client.post("/api/analyze", files={"image": ("t.png", _fake_image_bytes(), "image/png")}, data={"request": "count"}).json()["run_id"]
+        assert client.post("/api/correct", json={"run_id": run_id, "x": 15, "y": 15, "mode": "remove"}).json()["count"] == 1
+        with patch("server.segment_point", side_effect=AssertionError("restore must not call SAM")):
+            r = client.post("/api/correct", json={"run_id": run_id, "x1": 12, "y1": 12, "x2": 28, "y2": 28, "mode": "add"})
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert j["count"] == 2 and j["correction"]["action"] == "restore"
+        assert {"x1": 10, "y1": 10, "x2": 30, "y2": 30}.items() <= j["boxes"][-1].items()
+        assert j["measurements"][-1]["area_px"] == 400  # real 20x20 mask, not a rectangle guess
+
+
+def test_correction_keeps_size_filter_exclusions(tmp_path, monkeypatch):
+    """Boxes excluded by the run's size filter stay out of the count after a correction."""
+    monkeypatch.setenv("LABVISION_RUNS_DIR", str(tmp_path/"runs"))
+    import server as srv; monkeypatch.setattr(srv, "RUNS_DIR", tmp_path/"runs")
+    with patch("server.segment", side_effect=_fake_segment), \
+         patch("labvision.segment.Segmentation.decoded_masks", _fake_masks), \
+         patch("labvision.plate.detect_plate_diameter_px", return_value=None):
+        run_id = client.post("/api/analyze", files={"image": ("t.png", _fake_image_bytes(), "image/png")}, data={"request": "count"}).json()["run_id"]
+        rdir = tmp_path/"runs"/run_id
+        boxes = json.loads((rdir/"boxes.json").read_text())
+        boxes[1]["filtered_out"] = True  # as if a size filter excluded the second colony
+        (rdir/"boxes.json").write_text(json.dumps(boxes))
+        with patch("server.segment_point") as mock_point:
+            from labvision.segment import Box, Segmentation
+            seg = Segmentation(boxes=[Box(80, 80, 90, 90)], raw_masks=[], width=100, height=100, confidences=[0.9])
+            m = np.zeros((1, 100, 100), dtype=bool); m[0, 80:90, 80:90] = True
+            seg.decoded_masks = lambda: m
+            mock_point.return_value = seg
+            with patch("labvision.contrast.is_contrast_ok", return_value=(True, 30.0)):
+                r = client.post("/api/correct", json={"run_id": run_id, "x": 85, "y": 85, "mode": "add"})
+        assert r.status_code == 200, r.text
+        assert r.json()["count"] == 2  # colony 1 + the added one; the excluded colony is not counted
